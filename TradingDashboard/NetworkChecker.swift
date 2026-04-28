@@ -1,7 +1,7 @@
 import Foundation
 import Network
 
-private final class ConnectionFinishState: @unchecked Sendable {
+nonisolated private final class ConnectionFinishState: @unchecked Sendable {
     private let lock = NSLock()
     private var finished = false
 

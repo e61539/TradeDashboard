@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Quote API
 
-struct QuoteDataPayload: Codable {
+nonisolated struct QuoteDataPayload: Codable {
     let last: Double?
     let close: Double?
     let dailyHigh: Double?
@@ -20,14 +20,14 @@ struct QuoteDataPayload: Codable {
     }
 }
 
-struct QuoteResponse: Codable {
+nonisolated struct QuoteResponse: Codable {
     let symbol: String
     let data: QuoteDataPayload
 }
 
 // MARK: - Trading API
 
-struct PreviewResponse: Codable {
+nonisolated struct PreviewResponse: Codable {
     let ok: Bool?
     let preview_id: String
     let confirm_code: String
@@ -38,7 +38,7 @@ struct PreviewResponse: Codable {
     let acct: String?
 }
 
-struct BrokerResult: Codable {
+nonisolated struct BrokerResult: Codable {
     let message: String?
     let order_id: String?
     let risk_est_price: Double?
@@ -49,7 +49,7 @@ struct BrokerResult: Codable {
     let mode: String?
 }
 
-struct ConfirmResult: Codable {
+nonisolated struct ConfirmResult: Codable {
     let ok: Bool
     let preview_id: String?
     let symbol: String?
@@ -61,13 +61,13 @@ struct ConfirmResult: Codable {
 
 // MARK: - UI Models
 
-struct QuoteLine: Identifiable {
+nonisolated struct QuoteLine: Identifiable {
     let id = UUID()
     let label: String
     let value: String
 }
 
-struct SymbolStatus: Identifiable {
+nonisolated struct SymbolStatus: Identifiable {
     let id = UUID()
     let symbol: String
     let status: String
@@ -76,7 +76,7 @@ struct SymbolStatus: Identifiable {
     let lastPrice: Double?
 }
 
-struct PendingTrade: Identifiable {
+nonisolated struct PendingTrade: Identifiable {
     let id = UUID()
     let symbol: String
     let side: String
@@ -85,7 +85,7 @@ struct PendingTrade: Identifiable {
 
 // MARK: - Positions / Account API
 
-struct Position: Codable, Identifiable {
+nonisolated struct Position: Codable, Identifiable {
     var id: String { symbol }
 
     let symbol: String
@@ -122,7 +122,7 @@ struct Position: Codable, Identifiable {
     }
 }
 
-struct PositionsSummary: Codable {
+nonisolated struct PositionsSummary: Codable {
     let marketValue: Double?
     let costBasis: Double?
     let gainLoss: Double?
@@ -136,7 +136,7 @@ struct PositionsSummary: Codable {
     }
 }
 
-struct PositionsResponse: Codable {
+nonisolated struct PositionsResponse: Codable {
     let ok: Bool
     let count: Int
     let positions: [Position]
@@ -165,7 +165,7 @@ struct PositionsResponse: Codable {
     }
 }
 
-struct AccountSnapshot {
+nonisolated struct AccountSnapshot {
     let positions: [Position]
     let summary: PositionsSummary?
     let assetTotal: Double?
@@ -179,7 +179,7 @@ struct AccountSnapshot {
 
 // MARK: - BuyLow API
 
-struct BuyLowEntry: Codable, Identifiable {
+nonisolated struct BuyLowEntry: Codable, Identifiable {
     var id = UUID()
     let event: String
     let message: String
@@ -190,7 +190,7 @@ struct BuyLowEntry: Codable, Identifiable {
     }
 }
 
-struct BuyLowResponse: Codable {
+nonisolated struct BuyLowResponse: Codable {
     let ok: Bool
     let count: Int
     let entries: [BuyLowEntry]

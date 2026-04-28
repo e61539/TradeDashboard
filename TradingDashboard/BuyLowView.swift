@@ -1,9 +1,12 @@
+import Combine
 import SwiftUI
 
 struct BuyLowView: View {
     let baseURL: String
     let apiKey: String
     let symbols: [String]
+
+    private let refreshTimer = Timer.publish(every: 10, on: .main, in: .common).autoconnect()
 
     @State private var statuses: [BuyLowStatus] = []
     @State private var errorMessage = ""
@@ -18,7 +21,11 @@ struct BuyLowView: View {
 
                 Spacer()
 
-                Button("Refresh") {
+                Text("Auto 10s")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Button(isLoading ? "Refreshing" : "Refresh") {
                     loadEntries()
                 }
                 .font(.caption)
@@ -55,7 +62,7 @@ struct BuyLowView: View {
                             .font(.system(size: 20, weight: .semibold))
                             .foregroundColor(color(for: status.status))
 
-                        Text(status.message)
+                        highlightedMessage(status.message)
                             .font(.system(size: 19))
                             .foregroundColor(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -76,9 +83,14 @@ struct BuyLowView: View {
         .onChange(of: baseURL) {
             loadEntries()
         }
+        .onReceive(refreshTimer) { _ in
+            loadEntries()
+        }
     }
 
     private func loadEntries() {
+        guard !isLoading else { return }
+
         isLoading = true
         errorMessage = ""
 
@@ -107,5 +119,40 @@ struct BuyLowView: View {
         default:
             return .secondary
         }
+    }
+
+    private func highlightedMessage(_ message: String) -> Text {
+        let regex = try? NSRegularExpression(pattern: #"[+-]?(?:\d+(?:\.\d+)?|\.\d+)\s*%"#)
+        let nsMessage = message as NSString
+        let matches = regex?.matches(
+            in: message,
+            range: NSRange(location: 0, length: nsMessage.length)
+        ) ?? []
+
+        guard !matches.isEmpty else {
+            return Text(message)
+        }
+
+        var text = Text("")
+        var cursor = 0
+
+        for match in matches {
+            if match.range.location > cursor {
+                text = text + Text(nsMessage.substring(with: NSRange(location: cursor, length: match.range.location - cursor)))
+            }
+
+            let percent = nsMessage.substring(with: match.range)
+            text = text + Text(percent)
+                .fontWeight(.bold)
+                .foregroundColor(.orange)
+
+            cursor = match.range.location + match.range.length
+        }
+
+        if cursor < nsMessage.length {
+            text = text + Text(nsMessage.substring(with: NSRange(location: cursor, length: nsMessage.length - cursor)))
+        }
+
+        return text
     }
 }

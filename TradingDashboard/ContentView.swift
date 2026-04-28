@@ -33,20 +33,7 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     topBar
 
-                    NavigationLink {
-                        BuyLowView()
-                    } label: {
-                        HStack {
-                            Text("BuyLow Logs")
-                                .font(.subheadline)
-                                .bold()
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                        }
-                        .padding()
-                        .background(Color(.secondarySystemBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                    }
+                    BuyLowView(baseURL: tradeBaseURL, apiKey: tradeAPIKey, symbols: symbols)
 
                     qtyBar
 
@@ -241,47 +228,47 @@ struct ContentView: View {
     private var accountSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Account")
-                .font(.title3)
+                .font(.title2)
                 .bold()
 
             HStack {
                 Text("Assets")
-                    .font(.subheadline)
+                    .font(.title3)
                     .foregroundColor(.secondary)
                 Spacer()
-                moneyText(formatMoney(assetTotal), size: 14)
+                moneyText(formatMoney(assetTotal), size: 21)
             }
 
             HStack {
                 Text("Cash Available")
-                    .font(.subheadline)
+                    .font(.title3)
                     .foregroundColor(.secondary)
                 Spacer()
-                moneyText(formatOptionalMoney(cashAvailable), size: 14)
+                moneyText(formatOptionalMoney(cashAvailable), size: 21)
             }
 
             HStack {
                 Text("Pending Buys")
-                    .font(.subheadline)
+                    .font(.title3)
                     .foregroundColor(.secondary)
                 Spacer()
-                moneyText(formatOptionalMoney(pendingBuyNotional), color: .orange, size: 14)
+                moneyText(formatOptionalMoney(pendingBuyNotional), color: .orange, size: 21)
             }
 
             HStack {
                 Text("Free Cash")
-                    .font(.subheadline)
+                    .font(.title3)
                     .foregroundColor(.secondary)
                 Spacer()
-                moneyText(formatOptionalMoney(freeCashAfterPending), color: .green, size: 14)
+                moneyText(formatOptionalMoney(freeCashAfterPending), color: .green, size: 21)
             }
 
             HStack {
                 Text("Total")
-                    .font(.subheadline)
+                    .font(.title3)
                     .foregroundColor(.secondary)
                 Spacer()
-                moneyText(formatOptionalMoney(totalAccountValue), size: 14)
+                moneyText(formatOptionalMoney(totalAccountValue), size: 21)
             }
 
             GeometryReader { geo in
@@ -309,27 +296,27 @@ struct ContentView: View {
             HStack {
                 Label("Assets", systemImage: "circle.fill")
                     .foregroundColor(.blue)
-                    .font(.caption)
+                    .font(.headline)
                 Spacer()
                 Label("Cash", systemImage: "circle.fill")
                     .foregroundColor(.green)
-                    .font(.caption)
+                    .font(.headline)
             }
 
             HStack {
                 Text("Buying Power")
-                    .font(.caption)
+                    .font(.headline)
                     .foregroundColor(.secondary)
                 Spacer()
-                moneyText(formatOptionalMoney(buyingPower), size: 12)
+                moneyText(formatOptionalMoney(buyingPower), size: 18)
             }
 
             HStack {
                 Text("Settled Cash")
-                    .font(.caption)
+                    .font(.headline)
                     .foregroundColor(.secondary)
                 Spacer()
-                moneyText(formatOptionalMoney(settledCash), size: 12)
+                moneyText(formatOptionalMoney(settledCash), size: 18)
             }
         }
         .padding()
@@ -348,23 +335,23 @@ struct ContentView: View {
     private var positionsSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Positions")
-                .font(.headline)
+                .font(.title2)
                 .bold()
 
             if !positionsError.isEmpty {
                 Text(positionsError)
-                    .font(.caption)
+                    .font(.headline)
                     .foregroundColor(.red)
             }
 
             ForEach(positions) { pos in
                 HStack {
                     Text(pos.symbol)
-                        .font(.system(size: 14, weight: .semibold))
-                        .frame(minWidth: 40, alignment: .leading)
+                        .font(.system(size: 21, weight: .semibold))
+                        .frame(minWidth: 62, alignment: .leading)
 
                     Text("Qty \(formatQty(pos.qty))")
-                        .font(.system(size: 13))
+                        .font(.system(size: 20))
                         .foregroundColor(.secondary)
 
                     Spacer()
@@ -372,13 +359,13 @@ struct ContentView: View {
                     VStack(alignment: .trailing, spacing: 0) {
                         Text(formatSigned(pos.gainLoss))
                             .foregroundColor((pos.gainLoss ?? 0) >= 0 ? .green : .red)
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.system(size: 20, weight: .semibold))
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
 
                         Text(formatPercent(pos.gainLossPct))
                             .foregroundColor((pos.gainLoss ?? 0) >= 0 ? .green : .red)
-                            .font(.system(size: 11))
+                            .font(.system(size: 17))
                     }
                 }
             }

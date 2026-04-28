@@ -179,6 +179,64 @@ nonisolated struct AccountSnapshot {
 
 // MARK: - BuyLow API
 
+nonisolated struct BuyLowSummaryPayload: Codable {
+    let status: String?
+    let rawStatus: String?
+    let symbol: String?
+    let displayText: String?
+    let holdText: String?
+    let passLine: String?
+    let account: String?
+    let brake: String?
+    let cap: String?
+    let capDetail: String?
+    let why: String?
+    let spread: String?
+    let hold: String?
+    let skip: String?
+    let warn: String?
+    let trigger: String?
+    let signal: String?
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case rawStatus = "raw_status"
+        case symbol
+        case displayText = "display_text"
+        case holdText = "hold_text"
+        case passLine = "pass_line"
+        case account
+        case brake
+        case cap
+        case capDetail = "cap_detail"
+        case why
+        case spread
+        case hold
+        case skip
+        case warn
+        case trigger
+        case signal
+    }
+}
+
+nonisolated struct BuyLowSummaryResponse: Codable {
+    let ok: Bool
+    let file: String?
+    let path: String?
+    let symbol: String?
+    let summary: BuyLowSummaryPayload?
+    let error: String?
+}
+
+nonisolated struct BuyLowStatus: Identifiable {
+    var id: String { symbol }
+
+    let symbol: String
+    let status: String
+    let message: String
+    let file: String?
+}
+
 nonisolated struct BuyLowEntry: Codable, Identifiable {
     var id = UUID()
     let event: String

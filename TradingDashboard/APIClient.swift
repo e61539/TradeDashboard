@@ -56,6 +56,105 @@ final class APIClient {
         }.resume()
     }
 
+    func fetchBuyLowStatuses(
+        baseURL: String,
+        apiKey: String,
+        symbols: [String],
+        completion: @escaping ([BuyLowStatus]?, String?) -> Void
+    ) {
+        if symbols.isEmpty {
+            completion([], nil)
+            return
+        }
+
+        let group = DispatchGroup()
+        let lock = NSLock()
+        var statuses: [BuyLowStatus] = []
+        var errors: [String] = []
+
+        for symbol in symbols {
+            group.enter()
+            fetchBuyLowStatus(baseURL: baseURL, apiKey: apiKey, symbol: symbol) { status, error in
+                lock.lock()
+                if let status {
+                    statuses.append(status)
+                }
+                if let error {
+                    errors.append("\(symbol): \(error)")
+                }
+                lock.unlock()
+                group.leave()
+            }
+        }
+
+        group.notify(queue: .global(qos: .utility)) {
+            if statuses.isEmpty, let firstError = errors.first {
+                completion(nil, firstError)
+            } else {
+                completion(statuses.sorted { $0.symbol < $1.symbol }, nil)
+            }
+        }
+    }
+
+    private func fetchBuyLowStatus(
+        baseURL: String,
+        apiKey: String,
+        symbol: String,
+        completion: @escaping (BuyLowStatus?, String?) -> Void
+    ) {
+        var components = URLComponents(string: "\(baseURL)/api/logs/summary")
+        components?.queryItems = [
+            URLQueryItem(name: "symbol", value: symbol),
+            URLQueryItem(name: "search_files", value: "30")
+        ]
+
+        guard let url = components?.url else {
+            completion(nil, "Bad BuyLow summary URL")
+            return
+        }
+
+        var req = URLRequest(url: url)
+        req.setValue(apiKey, forHTTPHeaderField: "X-API-KEY")
+
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            if let error {
+                completion(nil, error.localizedDescription)
+                return
+            }
+
+            guard let http = response as? HTTPURLResponse else {
+                completion(nil, "No HTTP response")
+                return
+            }
+
+            guard let data, (200...299).contains(http.statusCode) else {
+                completion(nil, "HTTP \(http.statusCode)")
+                return
+            }
+
+            do {
+                let decoded = try JSONDecoder().decode(BuyLowSummaryResponse.self, from: data)
+
+                guard decoded.ok else {
+                    completion(nil, decoded.error ?? "BuyLow summary unavailable")
+                    return
+                }
+
+                let summary = decoded.summary
+                let status = BuyLowStatus(
+                    symbol: symbol,
+                    status: summary?.status ?? "UNKNOWN",
+                    message: summary?.displayText ?? summary?.holdText ?? "No signal yet",
+                    file: decoded.file
+                )
+                completion(status, nil)
+            } catch {
+                let body = String(data: data, encoding: .utf8) ?? ""
+                completion(nil, "BuyLow summary decode error: \(error.localizedDescription). Body: \(body)")
+            }
+        }.resume()
+    }
+
     func placeOrder(
         tradeBaseURL: String,
         apiKey: String,

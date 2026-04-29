@@ -235,6 +235,19 @@ nonisolated struct BuyLowStatus: Identifiable {
     let status: String
     let message: String
     let file: String?
+
+    func markedStale() -> BuyLowStatus {
+        let lastKnownMessage = message.hasPrefix("Last known: ")
+            ? message
+            : "Last known: \(message)"
+
+        return BuyLowStatus(
+            symbol: symbol,
+            status: "STALE",
+            message: lastKnownMessage,
+            file: file
+        )
+    }
 }
 
 nonisolated struct BuyLowEntry: Codable, Identifiable {

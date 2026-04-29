@@ -6,11 +6,17 @@ struct BuyLowView: View {
     let apiKey: String
     let symbols: [String]
 
-    private let refreshTimer = Timer.publish(every: 10, on: .main, in: .common).autoconnect()
+    private let refreshTimer = Timer.publish(every: 20, on: .main, in: .common).autoconnect()
 
     @State private var statuses: [BuyLowStatus] = []
     @State private var errorMessage = ""
-    @State private var isLoading = false
+    @State private var loadingSymbols: Set<String> = []
+    @State private var activeFetchCount = 0
+    @State private var isFetchingLogs = false
+
+    private var isLoading: Bool {
+        isFetchingLogs
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -21,17 +27,16 @@ struct BuyLowView: View {
 
                 Spacer()
 
-                Text("Auto 10s")
+                Text("Auto 20s")
                     .font(.caption)
                     .foregroundColor(.secondary)
 
                 Button(isLoading ? "Refreshing" : "Refresh") {
-                    loadEntries()
+                    loadEntries(force: true)
                 }
                 .font(.caption)
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .disabled(isLoading)
             }
 
             if isLoading && statuses.isEmpty {
@@ -88,24 +93,61 @@ struct BuyLowView: View {
         }
     }
 
-    private func loadEntries() {
-        guard !isLoading else { return }
+    private func loadEntries(force: Bool = false) {
+        guard force || !isFetchingLogs else { return }
 
-        isLoading = true
+        let symbolsToLoad = symbols
+        guard !symbolsToLoad.isEmpty else { return }
+
+        isFetchingLogs = true
+        activeFetchCount += symbolsToLoad.count
+        loadingSymbols.formUnion(symbolsToLoad)
         errorMessage = ""
 
-        APIClient.shared.fetchBuyLowStatuses(baseURL: baseURL, apiKey: apiKey, symbols: symbols) { statuses, error in
-            DispatchQueue.main.async {
-                self.isLoading = false
+        for symbol in symbolsToLoad {
+            APIClient.shared.fetchBuyLowStatus(baseURL: baseURL, apiKey: apiKey, symbol: symbol) { status, error in
+                DispatchQueue.main.async {
+                    self.loadingSymbols.remove(symbol)
+                    self.activeFetchCount = max(0, self.activeFetchCount - 1)
+                    if self.activeFetchCount == 0 {
+                        self.isFetchingLogs = false
+                    }
 
-                if let error {
-                    self.errorMessage = error
-                    return
+                    if let status {
+                        let oldStatus = self.statuses.first { $0.symbol == symbol }
+                        if let oldStatus, self.isTimeoutStatus(status) {
+                            self.upsert(oldStatus.markedStale())
+                        } else {
+                            self.upsert(status)
+                        }
+                        return
+                    }
+
+                    let oldStatus = self.statuses.first { $0.symbol == symbol }
+                    if let oldStatus, self.isTimeoutMessage(error) {
+                        self.upsert(oldStatus.markedStale())
+                    } else if let error {
+                        self.errorMessage = "\(symbol): \(error)"
+                    }
                 }
-
-                self.statuses = statuses ?? []
             }
         }
+    }
+
+    private func upsert(_ status: BuyLowStatus) {
+        statuses.removeAll { $0.symbol == status.symbol }
+        statuses.append(status)
+        statuses.sort { $0.symbol < $1.symbol }
+    }
+
+    private func isTimeoutMessage(_ message: String?) -> Bool {
+        message?.localizedCaseInsensitiveContains("timeout") == true
+            || message?.localizedCaseInsensitiveContains("timed out") == true
+    }
+
+    private func isTimeoutStatus(_ status: BuyLowStatus) -> Bool {
+        status.status.localizedCaseInsensitiveContains("CHECK")
+            && isTimeoutMessage(status.message)
     }
 
     private func color(for status: String) -> Color {

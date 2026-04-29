@@ -96,10 +96,26 @@ final class APIClient {
         }
     }
 
-    private func fetchBuyLowStatus(
+    func fetchBuyLowStatus(
         baseURL: String,
         apiKey: String,
         symbol: String,
+        completion: @escaping (BuyLowStatus?, String?) -> Void
+    ) {
+        fetchBuyLowStatusAttempt(
+            baseURL: baseURL,
+            apiKey: apiKey,
+            symbol: symbol,
+            retryOnFailure: true,
+            completion: completion
+        )
+    }
+
+    private func fetchBuyLowStatusAttempt(
+        baseURL: String,
+        apiKey: String,
+        symbol: String,
+        retryOnFailure: Bool,
         completion: @escaping (BuyLowStatus?, String?) -> Void
     ) {
         var components = URLComponents(string: "\(baseURL)/api/logs/summary")
@@ -114,21 +130,39 @@ final class APIClient {
         }
 
         var req = URLRequest(url: url)
+        req.timeoutInterval = AppConfig.buyLowRequestTimeout
         req.setValue(apiKey, forHTTPHeaderField: "X-API-KEY")
+
+        func fail(_ message: String) {
+            guard retryOnFailure else {
+                completion(nil, message)
+                return
+            }
+
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 1) {
+                self.fetchBuyLowStatusAttempt(
+                    baseURL: baseURL,
+                    apiKey: apiKey,
+                    symbol: symbol,
+                    retryOnFailure: false,
+                    completion: completion
+                )
+            }
+        }
 
         URLSession.shared.dataTask(with: req) { data, response, error in
             if let error {
-                completion(nil, error.localizedDescription)
+                fail(error.localizedDescription)
                 return
             }
 
             guard let http = response as? HTTPURLResponse else {
-                completion(nil, "No HTTP response")
+                fail("No HTTP response")
                 return
             }
 
             guard let data, (200...299).contains(http.statusCode) else {
-                completion(nil, "HTTP \(http.statusCode)")
+                fail("HTTP \(http.statusCode)")
                 return
             }
 
@@ -136,7 +170,7 @@ final class APIClient {
                 let decoded = try JSONDecoder().decode(BuyLowSummaryResponse.self, from: data)
 
                 guard decoded.ok else {
-                    completion(nil, decoded.error ?? "BuyLow summary unavailable")
+                    fail(decoded.error ?? "BuyLow summary unavailable")
                     return
                 }
 
@@ -150,7 +184,7 @@ final class APIClient {
                 completion(status, nil)
             } catch {
                 let body = String(data: data, encoding: .utf8) ?? ""
-                completion(nil, "BuyLow summary decode error: \(error.localizedDescription). Body: \(body)")
+                fail("BuyLow summary decode error: \(error.localizedDescription). Body: \(body)")
             }
         }.resume()
     }

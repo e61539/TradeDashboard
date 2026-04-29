@@ -10,6 +10,7 @@ enum AppConfig {
 
     static let enableTrading = true
     static let allowPublicFallback = false
+    static let buyLowRequestTimeout: TimeInterval = 20
 
     static let apiKey: String = {
         guard let key = Bundle.main.object(forInfoDictionaryKey: "TRADE_API_KEY") as? String,

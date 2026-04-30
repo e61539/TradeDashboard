@@ -32,7 +32,7 @@ struct BuyLowView: View {
                     .foregroundColor(.secondary)
 
                 Button(isLoading ? "Refreshing" : "Refresh") {
-                    loadEntries(force: true)
+                    loadEntries()
                 }
                 .font(.caption)
                 .buttonStyle(.bordered)
@@ -93,8 +93,8 @@ struct BuyLowView: View {
         }
     }
 
-    private func loadEntries(force: Bool = false) {
-        guard force || !isFetchingLogs else { return }
+    private func loadEntries() {
+        guard !isFetchingLogs else { return }
 
         let symbolsToLoad = symbols
         guard !symbolsToLoad.isEmpty else { return }

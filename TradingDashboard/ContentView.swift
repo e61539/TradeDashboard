@@ -21,7 +21,7 @@ struct ContentView: View {
     @State private var pendingBuyNotional: Double?
     @State private var freeCashAfterPending: Double?
 
-    let symbols = ["QQQ", "SPY", "GLD"]
+    let symbols = ["QQQ", "SPY", "GLD", "MSFT", "AAPL", "NVDA"]
 
     private var baseURL: String { endpointResolver.dashboardBaseURL }
     private var tradeBaseURL: String { endpointResolver.tradeBaseURL }

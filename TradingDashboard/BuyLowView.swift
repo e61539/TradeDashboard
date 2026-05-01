@@ -66,14 +66,24 @@ struct BuyLowView: View {
                         Text(status.status)
                             .font(.system(size: 20, weight: .semibold))
                             .foregroundColor(color(for: status.status))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
 
-                        highlightedMessage(status.message)
-                            .font(.system(size: 19))
-                            .foregroundColor(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                        if isATRBlocked(status.status) {
+                            Text(status.message)
+                                .font(.system(size: 19))
+                                .foregroundColor(atrDistanceColor(status.message))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.72)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        } else {
+                            highlightedMessage(status.message)
+                                .font(.system(size: 19))
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
-
-                    Spacer(minLength: 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 8)
@@ -151,16 +161,45 @@ struct BuyLowView: View {
     }
 
     private func color(for status: String) -> Color {
-        switch status.uppercased() {
-        case "READY":
+        let label = status.uppercased()
+
+        if label.contains("ELIGIBLE") {
             return .green
-        case "BLOCKED":
+        }
+        if label.contains("BLOCKED") {
             return .orange
-        case "CHECK":
+        }
+        if label.contains("CHECK") {
             return .red
-        default:
+        }
+
+        return .secondary
+    }
+
+    private func isATRBlocked(_ status: String) -> Bool {
+        status.localizedCaseInsensitiveContains("BLOCKED(ATR)")
+    }
+
+    private func atrDistanceColor(_ message: String) -> Color {
+        let regex = try? NSRegularExpression(pattern: #"([+-]?(?:\d+(?:\.\d+)?|\.\d+))%"#)
+        let nsMessage = message as NSString
+        let range = NSRange(location: 0, length: nsMessage.length)
+
+        guard
+            let match = regex?.firstMatch(in: message, range: range),
+            match.numberOfRanges > 1,
+            let value = Double(nsMessage.substring(with: match.range(at: 1)))
+        else {
             return .secondary
         }
+
+        if value <= 0 {
+            return .green
+        }
+        if value <= 1 {
+            return .orange
+        }
+        return .red
     }
 
     private func highlightedMessage(_ message: String) -> Text {

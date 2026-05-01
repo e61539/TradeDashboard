@@ -179,7 +179,7 @@ nonisolated struct AccountSnapshot {
 
 // MARK: - BuyLow API
 
-nonisolated struct BuyLowSummaryPayload: Codable {
+nonisolated struct BuyLowSummaryPayload: Decodable {
     let status: String?
     let rawStatus: String?
     let symbol: String?
@@ -197,6 +197,10 @@ nonisolated struct BuyLowSummaryPayload: Codable {
     let warn: String?
     let trigger: String?
     let signal: String?
+    let finalQty: Double?
+    let block: String?
+    let ask: Double?
+    let target: Double?
 
     enum CodingKeys: String, CodingKey {
         case status
@@ -216,10 +220,58 @@ nonisolated struct BuyLowSummaryPayload: Codable {
         case warn
         case trigger
         case signal
+        case finalQty = "final_qty"
+        case block
+        case ask
+        case askPrice = "ask_price"
+        case target
+        case targetPrice = "target_price"
+        case atrTarget = "atr_target"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        status = try container.decodeIfPresent(String.self, forKey: .status)
+        rawStatus = try container.decodeIfPresent(String.self, forKey: .rawStatus)
+        symbol = try container.decodeIfPresent(String.self, forKey: .symbol)
+        displayText = try container.decodeIfPresent(String.self, forKey: .displayText)
+        holdText = try container.decodeIfPresent(String.self, forKey: .holdText)
+        passLine = try container.decodeIfPresent(String.self, forKey: .passLine)
+        account = try container.decodeIfPresent(String.self, forKey: .account)
+        brake = try container.decodeIfPresent(String.self, forKey: .brake)
+        cap = try container.decodeIfPresent(String.self, forKey: .cap)
+        capDetail = try container.decodeIfPresent(String.self, forKey: .capDetail)
+        why = try container.decodeIfPresent(String.self, forKey: .why)
+        spread = try container.decodeIfPresent(String.self, forKey: .spread)
+        hold = try container.decodeIfPresent(String.self, forKey: .hold)
+        skip = try container.decodeIfPresent(String.self, forKey: .skip)
+        warn = try container.decodeIfPresent(String.self, forKey: .warn)
+        trigger = try container.decodeIfPresent(String.self, forKey: .trigger)
+        signal = try container.decodeIfPresent(String.self, forKey: .signal)
+        finalQty = Self.decodeDouble(container, .finalQty)
+        block = try container.decodeIfPresent(String.self, forKey: .block)
+        ask = Self.decodeDouble(container, .ask) ?? Self.decodeDouble(container, .askPrice)
+        target = Self.decodeDouble(container, .target)
+            ?? Self.decodeDouble(container, .targetPrice)
+            ?? Self.decodeDouble(container, .atrTarget)
+    }
+
+    private static func decodeDouble(
+        _ container: KeyedDecodingContainer<CodingKeys>,
+        _ key: CodingKeys
+    ) -> Double? {
+        if let value = try? container.decodeIfPresent(Double.self, forKey: key) {
+            return value
+        }
+        if let text = try? container.decodeIfPresent(String.self, forKey: key) {
+            return Double(text.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        return nil
     }
 }
 
-nonisolated struct BuyLowSummaryResponse: Codable {
+nonisolated struct BuyLowSummaryResponse: Decodable {
     let ok: Bool
     let file: String?
     let path: String?

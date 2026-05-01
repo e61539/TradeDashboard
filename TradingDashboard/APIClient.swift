@@ -177,8 +177,8 @@ final class APIClient {
                 let summary = decoded.summary
                 let status = BuyLowStatus(
                     symbol: symbol,
-                    status: summary?.status ?? "UNKNOWN",
-                    message: summary?.displayText ?? summary?.holdText ?? "No signal yet",
+                    status: self.buyLowDisplayStatus(summary),
+                    message: self.buyLowDisplayMessage(summary),
                     file: decoded.file
                 )
                 completion(status, nil)
@@ -187,6 +187,163 @@ final class APIClient {
                 fail("BuyLow summary decode error: \(error.localizedDescription). Body: \(body)")
             }
         }.resume()
+    }
+
+    private func buyLowDisplayStatus(_ summary: BuyLowSummaryPayload?) -> String {
+        guard let summary else { return "UNKNOWN" }
+
+        let block = normalizedBlock(summary)
+        if let finalQty = summary.finalQty, finalQty > 0, block == nil {
+            return "READY | ELIGIBLE"
+        }
+
+        if let reason = blockReason(summary) {
+            if reason == "ATR" || reason == "budget" || reason == "no size" {
+                return "HOLD | BLOCKED(\(reason))"
+            }
+
+            if hasSignal(summary) || summary.finalQty == 0 {
+                return "SIGNAL | BLOCKED(\(reason))"
+            }
+
+            return "HOLD | BLOCKED(\(reason))"
+        }
+
+        if hasSignal(summary), summary.finalQty == 0 {
+            return "SIGNAL | BLOCKED(unknown)"
+        }
+
+        if summary.status?.localizedCaseInsensitiveContains("READY") == true {
+            return "SIGNAL | BLOCKED(unknown)"
+        }
+
+        return summary.status ?? "UNKNOWN"
+    }
+
+    private func buyLowDisplayMessage(_ summary: BuyLowSummaryPayload?) -> String {
+        guard let summary else { return "No signal yet" }
+
+        if blockReason(summary) == "ATR" {
+            if let (ask, target) = buyLowPrices(summary), target > 0 {
+                let discrepancyPct = (ask - target) / target * 100
+                return String(format: "Ask %.2f > Target %.2f (%+.1f%%)", ask, target, discrepancyPct)
+            }
+            return "ATR target not met"
+        }
+
+        if let reason = blockReason(summary), isBuySignalText(summary.displayText) {
+            return summary.holdText ?? "Blocked(\(reason))"
+        }
+
+        if summary.finalQty == 0, hasSignal(summary), isBuySignalText(summary.displayText) {
+            return summary.holdText ?? "Blocked"
+        }
+
+        return summary.displayText ?? summary.holdText ?? "No signal yet"
+    }
+
+    private func isBuySignalText(_ text: String?) -> Bool {
+        text?.localizedCaseInsensitiveContains("BUY signal") == true
+    }
+
+    private func buyLowPrices(_ summary: BuyLowSummaryPayload) -> (ask: Double, target: Double)? {
+        if let ask = summary.ask, let target = summary.target {
+            return (ask, target)
+        }
+
+        let text = [
+            summary.displayText,
+            summary.holdText,
+            summary.why,
+            summary.hold,
+            summary.skip,
+            summary.warn,
+            summary.trigger,
+            summary.signal
+        ]
+            .compactMap { $0 }
+            .joined(separator: " ")
+
+        let ask = summary.ask ?? firstNumber(after: ["ask", "ask_price"], in: text)
+        let target = summary.target ?? firstNumber(after: ["target", "target_price", "atr_target"], in: text)
+
+        guard let ask, let target else { return nil }
+        return (ask, target)
+    }
+
+    private func firstNumber(after labels: [String], in text: String) -> Double? {
+        for label in labels {
+            let escapedLabel = NSRegularExpression.escapedPattern(for: label)
+            let pattern = #"(?i)\b"# + escapedLabel + #"\b\s*[:=]?\s*\$?([0-9]+(?:\.[0-9]+)?)"#
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+
+            let nsText = text as NSString
+            let range = NSRange(location: 0, length: nsText.length)
+            if let match = regex.firstMatch(in: text, range: range), match.numberOfRanges > 1 {
+                return Double(nsText.substring(with: match.range(at: 1)))
+            }
+        }
+
+        return nil
+    }
+
+    private func blockReason(_ summary: BuyLowSummaryPayload) -> String? {
+        let text = [
+            normalizedBlock(summary),
+            summary.why,
+            summary.hold,
+            summary.skip,
+            summary.warn,
+            summary.displayText,
+            summary.holdText
+        ]
+            .compactMap { $0 }
+            .joined(separator: " ")
+            .lowercased()
+
+        guard !text.isEmpty else { return nil }
+
+        if text.contains("atr") || text.contains("target not met") || text.contains("strict") {
+            return "ATR"
+        }
+        if text.contains("budget") || text.contains("cash=0") || text.contains("budget=0") || text.contains("budget 0") {
+            return "budget"
+        }
+        if text.contains("no_viable_size") || text.contains("no viable size") || text.contains("final_qty=0") {
+            return "no size"
+        }
+        if text.contains("min_usd") || text.contains("min_qty") {
+            return "min size"
+        }
+        if text.contains("cap") || text.contains("headroom") {
+            return "cap"
+        }
+        if text.contains("spread") {
+            return "spread"
+        }
+
+        return normalizedBlock(summary)
+    }
+
+    private func normalizedBlock(_ summary: BuyLowSummaryPayload) -> String? {
+        let block = summary.block?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let block, !block.isEmpty, block.lowercased() != "none" else {
+            return nil
+        }
+        return block
+    }
+
+    private func hasSignal(_ summary: BuyLowSummaryPayload) -> Bool {
+        let signalText = [summary.signal, summary.trigger, summary.passLine]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .joined(separator: " ")
+            .lowercased()
+
+        if !signalText.isEmpty && signalText != "none" {
+            return true
+        }
+
+        return summary.status?.localizedCaseInsensitiveContains("READY") == true
     }
 
     func placeOrder(

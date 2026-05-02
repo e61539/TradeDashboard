@@ -12,6 +12,8 @@ struct ContentView: View {
     @State private var pendingTrade: PendingTrade?
     @State private var selectedQty: Int = 1
     @State private var positionsError: String = ""
+    @State private var capitalReadiness: CapitalReadiness?
+    @State private var capitalReadinessError: String = ""
 
     @State private var assetTotal: Double = 0
     @State private var cashAvailable: Double?
@@ -34,6 +36,7 @@ struct ContentView: View {
                     topBar
 
                     BuyLowView(baseURL: tradeBaseURL, apiKey: tradeAPIKey, symbols: symbols)
+                    capitalReadinessSection
 
                     qtyBar
 
@@ -324,6 +327,112 @@ struct ContentView: View {
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
+    private var capitalReadinessSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Capital Readiness")
+                    .font(.title2)
+                    .bold()
+
+                Spacer()
+
+                Text("Advisory only")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            if !capitalReadinessError.isEmpty {
+                Text(capitalReadinessError)
+                    .font(.subheadline)
+                    .foregroundColor(.red)
+            }
+
+            if let readiness = capitalReadiness {
+                if readiness.isStale == true {
+                    Text("Capital readiness data stale")
+                        .font(.subheadline)
+                        .foregroundColor(.orange)
+                }
+
+                HStack {
+                    Text("Schwab budget")
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    moneyText(formatMoney(readiness.schwabBudgetRemaining), size: 17)
+                }
+
+                HStack {
+                    Text("Merrill reserve available")
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    moneyText(formatMoney(readiness.merrillReserveAvailable), size: 17)
+                }
+
+                HStack {
+                    Text("Suggested manual transfer")
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    moneyText(formatMoney(suggestedManualTransfer(readiness)), color: .orange, size: 17)
+                }
+
+                if !readiness.merrillReserveConfigured {
+                    Text("Merrill reserve not configured")
+                        .font(.subheadline)
+                        .foregroundColor(.orange)
+                } else if readiness.blockedSymbols.isEmpty {
+                    Text("No funding action suggested")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+
+                ForEach(readiness.blockedSymbols) { blocked in
+                    capitalBlockedRow(blocked)
+                }
+            } else if capitalReadinessError.isEmpty {
+                Text("No funding action suggested")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func capitalBlockedRow(_ blocked: BlockedSymbol) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("\(blocked.symbol) blocked by \(simplifiedBlockReason(blocked.blockReason))")
+                    .font(.system(size: 16, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+
+                Spacer(minLength: 8)
+
+                if blocked.manualActionRequired {
+                    Text("Manual action required")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+            }
+
+            Text("Current \(formatMoney(blocked.currentPrice)) | Target \(formatMoney(blocked.targetPrice)) | \(formatPercent(blocked.distanceToTargetPct))")
+                .font(.system(size: 14))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+
+            Text("Suggested manual transfer: \(formatMoney(blocked.suggestedFundingNeeded)) from \(blocked.suggestedSourceHolding)")
+                .font(.system(size: 14))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .padding(.vertical, 6)
+    }
+
     private func moneyText(_ value: String, color: Color = .primary, size: CGFloat = 14) -> some View {
         Text(value)
             .font(.system(size: size, weight: .bold, design: .monospaced))
@@ -378,6 +487,7 @@ struct ContentView: View {
     private func loadAll() {
         fetchAllQuotes()
         fetchPositions()
+        fetchCapitalReadiness()
     }
 
     private func fetchAllQuotes() {
@@ -494,6 +604,49 @@ struct ContentView: View {
                 self.freeCashAfterPending = snapshot.freeCashAfterPending
             }
         }
+    }
+
+    private func fetchCapitalReadiness() {
+        APIClient.shared.fetchCapitalReadiness(baseURL: baseURL, apiKey: tradeAPIKey) { readiness, error in
+            DispatchQueue.main.async {
+                if let error {
+                    self.capitalReadinessError = error
+                    self.capitalReadiness = nil
+                    return
+                }
+
+                self.capitalReadinessError = ""
+                self.capitalReadiness = readiness
+            }
+        }
+    }
+
+    private func suggestedManualTransfer(_ readiness: CapitalReadiness) -> Double {
+        readiness.blockedSymbols
+            .filter { $0.manualActionRequired }
+            .reduce(0) { $0 + $1.suggestedFundingNeeded }
+    }
+
+    private func simplifiedBlockReason(_ reason: String) -> String {
+        let text = reason.lowercased()
+
+        if text.contains("budget") || text.contains("effective_budget") {
+            return "Schwab budget"
+        }
+        if text.contains("no_viable_size") || text.contains("0_shares") {
+            return "no viable size"
+        }
+        if text.contains("atr") {
+            return "ATR target"
+        }
+        if text.contains("cap") || text.contains("headroom") {
+            return "cap/headroom"
+        }
+        if text.contains("spread") {
+            return "spread"
+        }
+
+        return reason.replacingOccurrences(of: "_", with: " ")
     }
 
     nonisolated private func makeQuoteLines(from data: QuoteDataPayload) -> [QuoteLine] {

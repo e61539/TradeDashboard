@@ -177,6 +177,60 @@ nonisolated struct AccountSnapshot {
     let freeCashAfterPending: Double?
 }
 
+// MARK: - Capital Readiness API
+
+nonisolated struct CapitalReadiness: Codable {
+    let generatedAt: String
+    let mode: String
+    let schwabCashAvailable: Double
+    let schwabBudgetRemaining: Double
+    let merrillReserveAvailable: Double
+    let merrillReserveConfigured: Bool
+    let manualActionRequired: Bool
+    let blockedSymbols: [BlockedSymbol]
+    let isStale: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case generatedAt = "generated_at"
+        case mode
+        case schwabCashAvailable = "schwab_cash_available"
+        case schwabBudgetRemaining = "schwab_budget_remaining"
+        case merrillReserveAvailable = "merrill_reserve_available"
+        case merrillReserveConfigured = "merrill_reserve_configured"
+        case manualActionRequired = "manual_action_required"
+        case blockedSymbols = "blocked_symbols"
+        case isStale = "is_stale"
+    }
+}
+
+nonisolated struct BlockedSymbol: Codable, Identifiable {
+    var id: String { symbol }
+
+    let symbol: String
+    let updatedAt: String?
+    let blockReason: String
+    let targetPrice: Double
+    let currentPrice: Double
+    let distanceToTargetPct: Double
+    let suggestedFundingNeeded: Double
+    let suggestedSourceAccount: String
+    let suggestedSourceHolding: String
+    let manualActionRequired: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case symbol
+        case updatedAt = "updated_at"
+        case blockReason = "block_reason"
+        case targetPrice = "target_price"
+        case currentPrice = "current_price"
+        case distanceToTargetPct = "distance_to_target_pct"
+        case suggestedFundingNeeded = "suggested_funding_needed"
+        case suggestedSourceAccount = "suggested_source_account"
+        case suggestedSourceHolding = "suggested_source_holding"
+        case manualActionRequired = "manual_action_required"
+    }
+}
+
 // MARK: - BuyLow API
 
 nonisolated struct BuyLowSummaryPayload: Decodable {

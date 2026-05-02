@@ -56,6 +56,51 @@ final class APIClient {
         }.resume()
     }
 
+    func fetchCapitalReadiness(
+        baseURL: String,
+        apiKey: String,
+        completion: @escaping (CapitalReadiness?, String?) -> Void
+    ) {
+        var components = URLComponents(string: "\(baseURL)/api/capital-readiness")
+        components?.queryItems = [
+            URLQueryItem(name: "k", value: apiKey)
+        ]
+
+        guard let url = components?.url else {
+            completion(nil, "Bad capital readiness URL")
+            return
+        }
+
+        var req = URLRequest(url: url)
+        req.timeoutInterval = AppConfig.buyLowRequestTimeout
+        req.setValue(apiKey, forHTTPHeaderField: "X-API-KEY")
+
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            if let error {
+                completion(nil, error.localizedDescription)
+                return
+            }
+
+            guard let http = response as? HTTPURLResponse else {
+                completion(nil, "No HTTP response")
+                return
+            }
+
+            guard let data, (200...299).contains(http.statusCode) else {
+                completion(nil, "HTTP \(http.statusCode)")
+                return
+            }
+
+            do {
+                let decoded = try JSONDecoder().decode(CapitalReadiness.self, from: data)
+                completion(decoded, nil)
+            } catch {
+                let body = String(data: data, encoding: .utf8) ?? ""
+                completion(nil, "Capital readiness decode error: \(error.localizedDescription). Body: \(body)")
+            }
+        }.resume()
+    }
+
     func fetchBuyLowStatuses(
         baseURL: String,
         apiKey: String,

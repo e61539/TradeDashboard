@@ -224,7 +224,9 @@ final class APIClient {
                     symbol: symbol,
                     status: self.buyLowDisplayStatus(summary),
                     message: self.buyLowDisplayMessage(summary),
-                    file: decoded.file
+                    file: decoded.file,
+                    currentExposurePct: self.currentExposurePct(summary),
+                    expCapPct: self.expCapPct(summary)
                 )
                 completion(status, nil)
             } catch {
@@ -276,6 +278,13 @@ final class APIClient {
             return "ATR target not met"
         }
 
+        if blockReason(summary) == "budget" {
+            if let current = currentExposurePct(summary), let cap = expCapPct(summary), normalizedPercent(current) > normalizedPercent(cap) {
+                return "Budget blocked: exposure over cap"
+            }
+            return "Budget blocked: no usable budget"
+        }
+
         if let reason = blockReason(summary), isBuySignalText(summary.displayText) {
             return summary.holdText ?? "Blocked(\(reason))"
         }
@@ -316,6 +325,37 @@ final class APIClient {
         return (ask, target)
     }
 
+    private func currentExposurePct(_ summary: BuyLowSummaryPayload?) -> Double? {
+        guard let summary else { return nil }
+        return summary.currentExposurePct
+            ?? firstNumber(after: ["current_exposure_pct", "currentExposurePct", "exposure_pct", "exposure"], in: exposureText(summary))
+    }
+
+    private func expCapPct(_ summary: BuyLowSummaryPayload?) -> Double? {
+        guard let summary else { return nil }
+        return summary.expCapPct
+            ?? firstNumber(after: ["exp_cap_pct", "expCapPct", "exp_cap", "cap"], in: exposureText(summary))
+    }
+
+    private func exposureText(_ summary: BuyLowSummaryPayload) -> String {
+        [
+            summary.cap,
+            summary.capDetail,
+            summary.why,
+            summary.hold,
+            summary.skip,
+            summary.warn,
+            summary.displayText,
+            summary.holdText
+        ]
+            .compactMap { $0 }
+            .joined(separator: " ")
+    }
+
+    private func normalizedPercent(_ value: Double) -> Double {
+        abs(value) <= 1 ? value * 100 : value
+    }
+
     private func firstNumber(after labels: [String], in text: String) -> Double? {
         for label in labels {
             let escapedLabel = NSRegularExpression.escapedPattern(for: label)
@@ -348,11 +388,11 @@ final class APIClient {
 
         guard !text.isEmpty else { return nil }
 
-        if text.contains("atr") || text.contains("target not met") || text.contains("strict") {
+        if isATRBlocked(summary, text: text) {
             return "ATR"
         }
-        if text.contains("budget") || text.contains("cash=0") || text.contains("budget=0") || text.contains("budget 0") {
-            return "budget"
+        if text.contains("spread") {
+            return "spread"
         }
         if text.contains("no_viable_size") || text.contains("no viable size") || text.contains("final_qty=0") {
             return "no size"
@@ -360,14 +400,26 @@ final class APIClient {
         if text.contains("min_usd") || text.contains("min_qty") {
             return "min size"
         }
+        if text.contains("budget") || text.contains("cash=0") || text.contains("budget=0") || text.contains("budget 0") {
+            return "budget"
+        }
         if text.contains("cap") || text.contains("headroom") {
             return "cap"
         }
-        if text.contains("spread") {
-            return "spread"
-        }
 
         return normalizedBlock(summary)
+    }
+
+    private func isATRBlocked(_ summary: BuyLowSummaryPayload, text: String) -> Bool {
+        if text.contains("atr") || text.contains("target not met") || text.contains("strict") {
+            return true
+        }
+
+        guard let (ask, target) = buyLowPrices(summary), target > 0 else {
+            return false
+        }
+
+        return ask > target
     }
 
     private func normalizedBlock(_ summary: BuyLowSummaryPayload) -> String? {

@@ -255,6 +255,8 @@ nonisolated struct BuyLowSummaryPayload: Decodable {
     let block: String?
     let ask: Double?
     let target: Double?
+    let currentExposurePct: Double?
+    let expCapPct: Double?
 
     enum CodingKeys: String, CodingKey {
         case status
@@ -281,6 +283,11 @@ nonisolated struct BuyLowSummaryPayload: Decodable {
         case target
         case targetPrice = "target_price"
         case atrTarget = "atr_target"
+        case currentExposurePct = "current_exposure_pct"
+        case currentExposurePctCamel = "currentExposurePct"
+        case exposurePct = "exposure_pct"
+        case expCapPct = "exp_cap_pct"
+        case expCapPctCamel = "expCapPct"
     }
 
     init(from decoder: Decoder) throws {
@@ -309,6 +316,11 @@ nonisolated struct BuyLowSummaryPayload: Decodable {
         target = Self.decodeDouble(container, .target)
             ?? Self.decodeDouble(container, .targetPrice)
             ?? Self.decodeDouble(container, .atrTarget)
+        currentExposurePct = Self.decodeDouble(container, .currentExposurePct)
+            ?? Self.decodeDouble(container, .currentExposurePctCamel)
+            ?? Self.decodeDouble(container, .exposurePct)
+        expCapPct = Self.decodeDouble(container, .expCapPct)
+            ?? Self.decodeDouble(container, .expCapPctCamel)
     }
 
     private static func decodeDouble(
@@ -341,6 +353,8 @@ nonisolated struct BuyLowStatus: Identifiable {
     let status: String
     let message: String
     let file: String?
+    let currentExposurePct: Double?
+    let expCapPct: Double?
 
     func markedStale() -> BuyLowStatus {
         let lastKnownMessage = message.hasPrefix("Last known: ")
@@ -351,7 +365,9 @@ nonisolated struct BuyLowStatus: Identifiable {
             symbol: symbol,
             status: "STALE",
             message: lastKnownMessage,
-            file: file
+            file: file,
+            currentExposurePct: currentExposurePct,
+            expCapPct: expCapPct
         )
     }
 }

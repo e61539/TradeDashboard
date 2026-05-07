@@ -26,6 +26,11 @@ struct ContentView: View {
     private var baseURL: String { endpointResolver.dashboardBaseURL }
     private var tradeBaseURL: String { endpointResolver.tradeBaseURL }
     private let tradeAPIKey = AppConfig.apiKey
+    private var ownedPositions: [Position] {
+        positions
+            .filter { $0.qty > 0 }
+            .sorted { $0.symbol < $1.symbol }
+    }
 
     var body: some View {
         NavigationStack {
@@ -47,9 +52,9 @@ struct ContentView: View {
                             .foregroundColor(.blue)
                     }
 
-                    quoteSection
+                    buyWatchlistSection
                     accountSection
-                    positionsSection
+                    sellOwnedPositionsSection
                 }
                 .padding()
             }
@@ -168,8 +173,12 @@ struct ContentView: View {
         }
     }
 
-    private var quoteSection: some View {
-        VStack(spacing: 8) {
+    private var buyWatchlistSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Buy / Watchlist")
+                .font(.title2)
+                .bold()
+
             ForEach(items) { item in
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .center) {
@@ -179,21 +188,12 @@ struct ContentView: View {
 
                         Spacer(minLength: 8)
 
-                        HStack(spacing: 6) {
-                            Button("Buy") {
-                                pendingTrade = PendingTrade(symbol: item.symbol, side: "buy", qty: selectedQty)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.small)
-                            .disabled(!AppConfig.enableTrading)
-
-                            Button("Sell") {
-                                pendingTrade = PendingTrade(symbol: item.symbol, side: "sell", qty: selectedQty)
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .disabled(!AppConfig.enableTrading)
+                        Button("Buy") {
+                            pendingTrade = PendingTrade(symbol: item.symbol, side: "buy", qty: selectedQty)
                         }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .disabled(!AppConfig.enableTrading)
                     }
 
                     HStack(alignment: .top, spacing: 18) {
@@ -339,9 +339,9 @@ struct ContentView: View {
             .minimumScaleFactor(0.7)
     }
 
-    private var positionsSection: some View {
+    private var sellOwnedPositionsSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Positions")
+            Text("Sell / Owned Positions")
                 .font(.title2)
                 .bold()
 
@@ -351,30 +351,60 @@ struct ContentView: View {
                     .foregroundColor(.red)
             }
 
-            ForEach(positions) { pos in
-                HStack {
-                    Text(pos.symbol)
-                        .font(.system(size: 21, weight: .semibold))
-                        .frame(minWidth: 62, alignment: .leading)
+            if ownedPositions.isEmpty && positionsError.isEmpty {
+                Text("No owned positions")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
 
-                    Text("Qty \(formatQty(pos.qty))")
-                        .font(.system(size: 20))
-                        .foregroundColor(.secondary)
-
-                    Spacer()
-
-                    VStack(alignment: .trailing, spacing: 0) {
-                        Text(formatSigned(pos.gainLoss))
-                            .foregroundColor((pos.gainLoss ?? 0) >= 0 ? .green : .red)
-                            .font(.system(size: 20, weight: .semibold))
+            ForEach(ownedPositions) { pos in
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .center) {
+                        Text(pos.symbol)
+                            .font(.system(size: 16, weight: .bold))
                             .lineLimit(1)
-                            .minimumScaleFactor(0.7)
 
-                        Text(formatPercent(pos.gainLossPct))
-                            .foregroundColor((pos.gainLoss ?? 0) >= 0 ? .green : .red)
-                            .font(.system(size: 17))
+                        Spacer(minLength: 8)
+
+                        Button("Sell") {
+                            pendingTrade = PendingTrade(symbol: pos.symbol, side: "sell", qty: selectedQty)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(!AppConfig.enableTrading)
                     }
+
+                    HStack(alignment: .top, spacing: 14) {
+                        positionMetric(label: "Qty", value: formatQty(pos.qty))
+                        positionMetric(label: "Last", value: formatOptionalMoney(pos.marketPrice))
+                        positionMetric(label: "52W", value: formatOptionalMoney(pos.week52High))
+                        positionMetric(label: "High%", value: formatPercent(pos.distTo52WHighPct))
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("G/L")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+
+                            Text(formatSigned(pos.gainLoss))
+                                .font(.system(size: 15, weight: .semibold, design: .monospaced))
+                                .foregroundColor((pos.gainLoss ?? 0) >= 0 ? .green : .red)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+
+                            Text(formatPercent(pos.gainLossPct))
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundColor((pos.gainLoss ?? 0) >= 0 ? .green : .red)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+                        }
+                        .frame(minWidth: 62, alignment: .leading)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 10)
+                .background(Color(.tertiarySystemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
             }
         }
         .padding()
@@ -489,7 +519,7 @@ struct ContentView: View {
                 }
 
                 self.positionsError = ""
-                self.positions = snapshot.positions.sorted { $0.symbol < $1.symbol }
+                self.positions = snapshot.positions
 
                 let computedAssets = snapshot.positions.reduce(0.0) { $0 + ($1.marketValue ?? 0) }
                 self.assetTotal = snapshot.assetTotal ?? computedAssets
@@ -535,6 +565,20 @@ struct ContentView: View {
         } else {
             return .primary
         }
+    }
+
+    private func positionMetric(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+
+            Text(value)
+                .font(.system(size: 15, weight: .semibold, design: .monospaced))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(minWidth: 58, alignment: .leading)
     }
 
     private func placeOrder(symbol: String, side: String, qty: Int) {

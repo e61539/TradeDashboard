@@ -50,6 +50,14 @@ struct BuyLowView: View {
                     .foregroundColor(.red)
             }
 
+            if let exposure = exposureContext {
+                Text(exposureLine(exposure))
+                    .font(.system(size: 13, weight: exposure.current > exposure.cap ? .semibold : .regular, design: .monospaced))
+                    .foregroundColor(exposure.current > exposure.cap ? .orange : .secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+
             if statuses.isEmpty && !isLoading && errorMessage.isEmpty {
                 Text("No BuyLow logs")
                     .font(.headline)
@@ -158,6 +166,24 @@ struct BuyLowView: View {
     private func isTimeoutStatus(_ status: BuyLowStatus) -> Bool {
         status.status.localizedCaseInsensitiveContains("CHECK")
             && isTimeoutMessage(status.message)
+    }
+
+    private var exposureContext: (current: Double, cap: Double)? {
+        for status in statuses {
+            if let current = status.currentExposurePct, let cap = status.expCapPct {
+                return (normalizedPercent(current), normalizedPercent(cap))
+            }
+        }
+        return nil
+    }
+
+    private func exposureLine(_ exposure: (current: Double, cap: Double)) -> String {
+        let suffix = exposure.current > exposure.cap ? " OVER" : ""
+        return String(format: "Exposure: %.1f%% / Cap %.1f%%%@", exposure.current, exposure.cap, suffix)
+    }
+
+    private func normalizedPercent(_ value: Double) -> Double {
+        abs(value) <= 1 ? value * 100 : value
     }
 
     private func color(for status: String) -> Color {

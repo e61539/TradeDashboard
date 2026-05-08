@@ -378,7 +378,7 @@ struct ContentView: View {
                         positionMetric(label: "Qty", value: formatQty(pos.qty))
                         positionMetric(label: "Last", value: formatOptionalMoney(pos.marketPrice))
                         positionMetric(label: "52W", value: formatOptionalMoney(pos.week52High))
-                        positionMetric(label: "High%", value: formatPercent(pos.distTo52WHighPct))
+                        positionMetric(label: "From High%", value: formatCompactPercent(pos.distTo52WHighPct))
 
                         VStack(alignment: .leading, spacing: 2) {
                             Text("G/L")
@@ -572,6 +572,8 @@ struct ContentView: View {
             Text(label)
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
 
             Text(value)
                 .font(.system(size: 15, weight: .semibold, design: .monospaced))
@@ -621,6 +623,11 @@ struct ContentView: View {
     private func formatPercent(_ value: Double?) -> String {
         guard let value else { return "--" }
         return String(format: "%.2f%%", value)
+    }
+
+    private func formatCompactPercent(_ value: Double?) -> String {
+        guard let value else { return "--" }
+        return String(format: "%.1f%%", value)
     }
 }
 

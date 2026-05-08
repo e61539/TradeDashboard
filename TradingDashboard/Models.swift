@@ -20,7 +20,8 @@ nonisolated struct QuoteDataPayload: Codable {
     }
 }
 
-nonisolated struct QuoteResponse: Codable {
+nonisolated struct QuoteRes
+ponse: Codable {
     let symbol: String
     let data: QuoteDataPayload
 }

@@ -20,8 +20,7 @@ nonisolated struct QuoteDataPayload: Codable {
     }
 }
 
-nonisolated struct QuoteRes
-ponse: Codable {
+nonisolated struct QuoteResponse: Codable {
     let symbol: String
     let data: QuoteDataPayload
 }
@@ -75,6 +74,143 @@ nonisolated struct SymbolStatus: Identifiable {
     let detail: String
     let lines: [QuoteLine]
     let lastPrice: Double?
+}
+
+// MARK: - Trend Rider Watchlist API
+
+nonisolated struct TrendWatchlistItem: Decodable, Identifiable {
+    var id: String { symbol }
+
+    let symbol: String
+    let score: Double?
+    let status: String?
+    let action: String?
+    let actionHint: String?
+    let badgeClass: String?
+    let priority: Int?
+    let last: Double?
+    let sma20: Double?
+    let sma50: Double?
+    let fromHighPct: Double?
+    let cooldownReason: String?
+    let cooldownEffect: String?
+    let reasons: [String]
+    let reasonCodes: [String]
+    let buyEnabled: Bool?
+    let visible: Bool?
+    let dataAvailable: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case symbol
+        case score
+        case status
+        case action
+        case actionHint = "action_hint"
+        case badgeClass = "badge_class"
+        case priority
+        case last
+        case sma20
+        case sma50
+        case fromHighPct = "from_high_pct"
+        case cooldownReason = "cooldown_reason"
+        case cooldownEffect = "cooldown_effect"
+        case reasons
+        case reasonCodes = "reason_codes"
+        case buyEnabled = "buy_enabled"
+        case visible
+        case dataAvailable = "data_available"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        symbol = try container.decode(String.self, forKey: .symbol)
+        score = Self.decodeDouble(container, .score)
+        status = try container.decodeIfPresent(String.self, forKey: .status)
+        action = try container.decodeIfPresent(String.self, forKey: .action)
+        actionHint = try container.decodeIfPresent(String.self, forKey: .actionHint)
+        badgeClass = try container.decodeIfPresent(String.self, forKey: .badgeClass)
+        priority = Self.decodeInt(container, .priority)
+        last = Self.decodeDouble(container, .last)
+        sma20 = Self.decodeDouble(container, .sma20)
+        sma50 = Self.decodeDouble(container, .sma50)
+        fromHighPct = Self.decodeDouble(container, .fromHighPct)
+        cooldownReason = try container.decodeIfPresent(String.self, forKey: .cooldownReason)
+        cooldownEffect = try container.decodeIfPresent(String.self, forKey: .cooldownEffect)
+        reasons = try container.decodeIfPresent([String].self, forKey: .reasons) ?? []
+        reasonCodes = try container.decodeIfPresent([String].self, forKey: .reasonCodes) ?? []
+        buyEnabled = try container.decodeIfPresent(Bool.self, forKey: .buyEnabled)
+        visible = try container.decodeIfPresent(Bool.self, forKey: .visible)
+        dataAvailable = try container.decodeIfPresent(Bool.self, forKey: .dataAvailable)
+    }
+
+    private static func decodeDouble(
+        _ container: KeyedDecodingContainer<CodingKeys>,
+        _ key: CodingKeys
+    ) -> Double? {
+        if let value = try? container.decodeIfPresent(Double.self, forKey: key) {
+            return value
+        }
+        if let text = try? container.decodeIfPresent(String.self, forKey: key) {
+            return Double(text.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        return nil
+    }
+
+    private static func decodeInt(
+        _ container: KeyedDecodingContainer<CodingKeys>,
+        _ key: CodingKeys
+    ) -> Int? {
+        if let value = try? container.decodeIfPresent(Int.self, forKey: key) {
+            return value
+        }
+        if let text = try? container.decodeIfPresent(String.self, forKey: key) {
+            return Int(text.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        return nil
+    }
+}
+
+nonisolated struct TrendWatchlistResponse: Decodable {
+    let ok: Bool?
+    let generatedAt: String?
+    let symbols: [String]
+    let items: [TrendWatchlistItem]
+    let warnings: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case ok
+        case generatedAt = "generated_at"
+        case symbols
+        case watchlistSymbols = "watchlist_symbols"
+        case etfUniverse = "etf_universe"
+        case items
+        case watchlist
+        case trendWatchlist = "trend_watchlist"
+        case etfs
+        case watchlistEtfs = "watchlist_etfs"
+        case rankings
+        case warnings
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        ok = try container.decodeIfPresent(Bool.self, forKey: .ok)
+        generatedAt = try container.decodeIfPresent(String.self, forKey: .generatedAt)
+        items = try container.decodeIfPresent([TrendWatchlistItem].self, forKey: .items)
+            ?? container.decodeIfPresent([TrendWatchlistItem].self, forKey: .watchlist)
+            ?? container.decodeIfPresent([TrendWatchlistItem].self, forKey: .trendWatchlist)
+            ?? container.decodeIfPresent([TrendWatchlistItem].self, forKey: .etfs)
+            ?? container.decodeIfPresent([TrendWatchlistItem].self, forKey: .watchlistEtfs)
+            ?? container.decodeIfPresent([TrendWatchlistItem].self, forKey: .rankings)
+            ?? []
+        symbols = try container.decodeIfPresent([String].self, forKey: .watchlistSymbols)
+            ?? container.decodeIfPresent([String].self, forKey: .symbols)
+            ?? container.decodeIfPresent([String].self, forKey: .etfUniverse)
+            ?? items.map(\.symbol)
+        warnings = try container.decodeIfPresent([String].self, forKey: .warnings) ?? []
+    }
 }
 
 nonisolated struct PendingTrade: Identifiable {

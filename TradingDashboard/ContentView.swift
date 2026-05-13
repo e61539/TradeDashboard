@@ -12,6 +12,9 @@ struct ContentView: View {
     @State private var pendingTrade: PendingTrade?
     @State private var selectedQty: Int = 1
     @State private var positionsError: String = ""
+    @State private var trendWatchlistItems: [TrendWatchlistItem] = []
+    @State private var trendWatchlistSymbols: [String] = []
+    @State private var trendWatchlistError: String = ""
 
     @State private var assetTotal: Double = 0
     @State private var cashAvailable: Double?
@@ -21,11 +24,14 @@ struct ContentView: View {
     @State private var pendingBuyNotional: Double?
     @State private var freeCashAfterPending: Double?
 
-    let symbols = ["QQQ", "SPY", "GLD", "MSFT", "AAPL", "NVDA"]
+    private let defaultSymbols = ["QQQ", "SPY", "GLD", "MSFT", "AAPL", "NVDA"]
 
     private var baseURL: String { endpointResolver.dashboardBaseURL }
     private var tradeBaseURL: String { endpointResolver.tradeBaseURL }
     private let tradeAPIKey = AppConfig.apiKey
+    private var symbols: [String] {
+        trendWatchlistSymbols.isEmpty ? defaultSymbols : trendWatchlistSymbols
+    }
     private var ownedPositions: [Position] {
         positions
             .filter { $0.qty > 0 }
@@ -179,6 +185,13 @@ struct ContentView: View {
                 .font(.title2)
                 .bold()
 
+            if !trendWatchlistError.isEmpty {
+                Text(trendWatchlistError)
+                    .font(.caption)
+                    .foregroundColor(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             ForEach(items) { item in
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .center) {
@@ -202,6 +215,50 @@ struct ContentView: View {
                         quoteMetric(item, label: "Day High", short: "H")
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
+
+                    if let trendItem = trendItem(for: item.symbol) {
+                        HStack(spacing: 6) {
+                            trendBadge(text: trendAction(trendItem), color: trendColor(trendItem))
+                            trendBadge(text: trendStatus(trendItem), color: trendStatusColor(trendItem))
+                        }
+
+                        LazyVGrid(
+                            columns: [
+                                GridItem(.flexible(minimum: 54), alignment: .leading),
+                                GridItem(.flexible(minimum: 54), alignment: .leading),
+                                GridItem(.flexible(minimum: 54), alignment: .leading),
+                                GridItem(.flexible(minimum: 54), alignment: .leading)
+                            ],
+                            alignment: .leading,
+                            spacing: 6
+                        ) {
+                            trendMetric(label: "Score", value: formatScore(trendItem.score))
+                            trendMetric(label: "Trend Last", value: formatOptionalMoney(trendItem.last))
+                            trendMetric(label: "SMA20", value: formatOptionalMoney(trendItem.sma20))
+                            trendMetric(label: "SMA50", value: formatOptionalMoney(trendItem.sma50))
+                            trendMetric(label: "52W", value: formatCompactPercent(trendItem.fromHighPct))
+                            trendMetric(label: "Priority", value: formatOptionalInt(trendItem.priority))
+                            trendMetric(label: "Data", value: formatOptionalBool(trendItem.dataAvailable))
+                            trendMetric(label: "Visible", value: formatOptionalBool(trendItem.visible))
+                        }
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            ForEach(trendDetailLines(trendItem), id: \.self) { line in
+                                Text(line)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+
+                            if !trendItem.reasonCodes.isEmpty {
+                                Text("Codes: \(trendItem.reasonCodes.joined(separator: ", "))")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(2)
+                                    .minimumScaleFactor(0.8)
+                            }
+                        }
+                    }
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 10)
@@ -230,6 +287,34 @@ struct ContentView: View {
                 .minimumScaleFactor(0.95)
         }
         .frame(minWidth: 78, alignment: .leading)
+    }
+
+    private func trendBadge(text: String, color: Color) -> some View {
+        Text(text)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundColor(color)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(color.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    private func trendMetric(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+
+            Text(value)
+                .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(minWidth: 54, alignment: .leading)
     }
 
     private var accountSection: some View {
@@ -413,11 +498,38 @@ struct ContentView: View {
     }
 
     private func loadAll() {
-        fetchAllQuotes()
+        fetchTrendWatchlistAndQuotes()
         fetchPositions()
     }
 
-    private func fetchAllQuotes() {
+    private func fetchTrendWatchlistAndQuotes() {
+        isLoading = true
+
+        APIClient.shared.fetchTrendWatchlist(baseURL: baseURL, apiKey: tradeAPIKey) { response, error in
+            DispatchQueue.main.async {
+                if let response {
+                    self.trendWatchlistItems = response.items
+
+                    let responseSymbols = response.symbols.isEmpty
+                        ? response.items.map(\.symbol)
+                        : response.symbols
+                    let normalizedSymbols = self.uniqueSymbols(responseSymbols)
+                    self.trendWatchlistSymbols = normalizedSymbols.isEmpty ? self.defaultSymbols : normalizedSymbols
+                    self.trendWatchlistError = response.warnings.first ?? ""
+                    self.fetchAllQuotes(for: self.symbols)
+                    return
+                }
+
+                self.trendWatchlistError = "Trend watchlist: \(error ?? "unavailable")"
+                if self.trendWatchlistSymbols.isEmpty {
+                    self.trendWatchlistSymbols = self.defaultSymbols
+                }
+                self.fetchAllQuotes(for: self.symbols)
+            }
+        }
+    }
+
+    private func fetchAllQuotes(for symbolsToLoad: [String]) {
         isLoading = true
 
         let oldPrices = Dictionary(uniqueKeysWithValues: items.compactMap { item in
@@ -427,7 +539,7 @@ struct ContentView: View {
         let group = DispatchGroup()
         var loadedItems: [SymbolStatus] = []
 
-        for symbol in symbols {
+        for symbol in symbolsToLoad {
             group.enter()
             fetchQuote(for: symbol) { result in
                 if let result = result {
@@ -442,6 +554,21 @@ struct ContentView: View {
             self.items = loadedItems.sorted { $0.symbol < $1.symbol }
             self.isLoading = false
         }
+    }
+
+    private func uniqueSymbols(_ rawSymbols: [String]) -> [String] {
+        var seen = Set<String>()
+        var output: [String] = []
+
+        for rawSymbol in rawSymbols {
+            let symbol = rawSymbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+            if !symbol.isEmpty, !seen.contains(symbol) {
+                seen.insert(symbol)
+                output.append(symbol)
+            }
+        }
+
+        return output
     }
 
     private func fetchQuote(for symbol: String, completion: @escaping (SymbolStatus?) -> Void) {
@@ -567,6 +694,74 @@ struct ContentView: View {
         }
     }
 
+    private func trendItem(for symbol: String) -> TrendWatchlistItem? {
+        trendWatchlistItems.first { $0.symbol.caseInsensitiveCompare(symbol) == .orderedSame }
+    }
+
+    private func trendAction(_ item: TrendWatchlistItem) -> String {
+        item.action ?? item.actionHint ?? item.status ?? "NEUTRAL"
+    }
+
+    private func trendStatus(_ item: TrendWatchlistItem) -> String {
+        item.status ?? "neutral"
+    }
+
+    private func trendColor(_ item: TrendWatchlistItem) -> Color {
+        if let badgeClass = item.badgeClass {
+            return trendClassColor(badgeClass)
+        }
+
+        switch trendAction(item).uppercased() {
+        case "BUY_CANDIDATE":
+            return .green
+        case "HOLD_STRONG":
+            return .blue
+        case "HOLD_DEFENSIVE", "WAIT_FOR_COOLDOWN":
+            return .orange
+        case "AVOID_FOR_NOW":
+            return .red
+        default:
+            return .secondary
+        }
+    }
+
+    private func trendStatusColor(_ item: TrendWatchlistItem) -> Color {
+        trendClassColor(trendStatus(item))
+    }
+
+    private func trendClassColor(_ value: String) -> Color {
+        switch value.lowercased() {
+        case "buy", "strong":
+            return .green
+        case "defensive", "cooldown":
+            return .orange
+        case "avoid", "weak":
+            return .red
+        case "neutral":
+            return .secondary
+        default:
+            return .blue
+        }
+    }
+
+    private func trendDetailLines(_ item: TrendWatchlistItem) -> [String] {
+        var lines: [String] = []
+
+        if let cooldownReason = item.cooldownReason, !cooldownReason.isEmpty {
+            lines.append("Cooldown: \(cooldownReason)")
+        }
+        if let cooldownEffect = item.cooldownEffect, !cooldownEffect.isEmpty {
+            lines.append("Effect: \(cooldownEffect)")
+        }
+        lines.append(contentsOf: item.reasons)
+
+        if lines.isEmpty, item.dataAvailable == false {
+            lines.append("No Trend Rider data available")
+        }
+
+        return lines
+    }
+
     private func positionMetric(label: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label)
@@ -618,6 +813,21 @@ struct ContentView: View {
     private func formatSigned(_ value: Double?) -> String {
         guard let value else { return "--" }
         return String(format: "%+.2f", value)
+    }
+
+    private func formatScore(_ value: Double?) -> String {
+        guard let value else { return "--" }
+        return String(format: "%.1f", value)
+    }
+
+    private func formatOptionalInt(_ value: Int?) -> String {
+        guard let value else { return "--" }
+        return "\(value)"
+    }
+
+    private func formatOptionalBool(_ value: Bool?) -> String {
+        guard let value else { return "--" }
+        return value ? "Yes" : "No"
     }
 
     private func formatPercent(_ value: Double?) -> String {

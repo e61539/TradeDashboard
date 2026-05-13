@@ -106,6 +106,10 @@ struct BuyLowView: View {
         .onChange(of: baseURL) {
             loadEntries()
         }
+        .onChange(of: symbols) {
+            statuses.removeAll { !symbols.contains($0.symbol) }
+            loadEntries()
+        }
         .onReceive(refreshTimer) { _ in
             loadEntries()
         }

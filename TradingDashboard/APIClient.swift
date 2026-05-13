@@ -4,6 +4,51 @@ final class APIClient {
     static let shared = APIClient()
     private init() {}
 
+    func fetchTrendWatchlist(
+        baseURL: String,
+        apiKey: String,
+        completion: @escaping (TrendWatchlistResponse?, String?) -> Void
+    ) {
+        var components = URLComponents(string: "\(baseURL)/api/trend-rider/watchlist")
+        components?.queryItems = [
+            URLQueryItem(name: "k", value: apiKey)
+        ]
+
+        guard let url = components?.url else {
+            completion(nil, "Bad Trend Rider watchlist URL")
+            return
+        }
+
+        var req = URLRequest(url: url)
+        req.timeoutInterval = AppConfig.buyLowRequestTimeout
+        req.setValue(apiKey, forHTTPHeaderField: "X-API-KEY")
+
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            if let error {
+                completion(nil, error.localizedDescription)
+                return
+            }
+
+            guard let http = response as? HTTPURLResponse else {
+                completion(nil, "No HTTP response")
+                return
+            }
+
+            guard let data, (200...299).contains(http.statusCode) else {
+                completion(nil, "HTTP \(http.statusCode)")
+                return
+            }
+
+            do {
+                let decoded = try JSONDecoder().decode(TrendWatchlistResponse.self, from: data)
+                completion(decoded, nil)
+            } catch {
+                let body = String(data: data, encoding: .utf8) ?? ""
+                completion(nil, "Trend Rider watchlist decode error: \(error.localizedDescription). Body: \(body)")
+            }
+        }.resume()
+    }
+
     func fetchAccountSnapshot(
         baseURL: String,
         apiKey: String,

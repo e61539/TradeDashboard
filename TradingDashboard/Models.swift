@@ -89,6 +89,8 @@ nonisolated struct TrendWatchlistItem: Decodable, Identifiable {
     let badgeClass: String?
     let priority: Int?
     let last: Double?
+    let close: Double?
+    let previousClose: Double?
     let sma20: Double?
     let sma50: Double?
     let fromHighPct: Double?
@@ -109,6 +111,10 @@ nonisolated struct TrendWatchlistItem: Decodable, Identifiable {
         case badgeClass = "badge_class"
         case priority
         case last
+        case close
+        case previousClose = "previous_close"
+        case previousCloseCamel = "previousClose"
+        case prevClose = "prev_close"
         case sma20
         case sma50
         case fromHighPct = "from_high_pct"
@@ -132,6 +138,10 @@ nonisolated struct TrendWatchlistItem: Decodable, Identifiable {
         badgeClass = try container.decodeIfPresent(String.self, forKey: .badgeClass)
         priority = Self.decodeInt(container, .priority)
         last = Self.decodeDouble(container, .last)
+        close = Self.decodeDouble(container, .close)
+        previousClose = Self.decodeDouble(container, .previousClose)
+            ?? Self.decodeDouble(container, .previousCloseCamel)
+            ?? Self.decodeDouble(container, .prevClose)
         sma20 = Self.decodeDouble(container, .sma20)
         sma50 = Self.decodeDouble(container, .sma50)
         fromHighPct = Self.decodeDouble(container, .fromHighPct)

@@ -15,6 +15,7 @@ struct ContentView: View {
     @State private var trendWatchlistItems: [TrendWatchlistItem] = []
     @State private var trendWatchlistSymbols: [String] = []
     @State private var trendWatchlistError: String = ""
+    @State private var expandedTrendSymbols: Set<String> = []
 
     @State private var assetTotal: Double = 0
     @State private var cashAvailable: Double?
@@ -180,7 +181,7 @@ struct ContentView: View {
     }
 
     private var buyWatchlistSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("Buy / Watchlist")
                 .font(.title2)
                 .bold()
@@ -193,11 +194,19 @@ struct ContentView: View {
             }
 
             ForEach(items) { item in
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(alignment: .center) {
-                        Text(item.symbol)
-                            .font(.system(size: 16, weight: .bold))
-                            .lineLimit(1)
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(item.symbol)
+                                .font(.system(size: 22, weight: .bold))
+                                .lineLimit(1)
+
+                            Text(currentPriceText(item))
+                                .font(.system(size: 19, weight: .semibold, design: .monospaced))
+                                .foregroundColor(colorForLine(symbol: item.symbol, line: item.lines.first(where: { $0.label == "Last" }), currentLast: item.lastPrice))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.9)
+                        }
 
                         Spacer(minLength: 8)
 
@@ -209,59 +218,80 @@ struct ContentView: View {
                         .disabled(!AppConfig.enableTrading)
                     }
 
-                    HStack(alignment: .top, spacing: 18) {
-                        quoteMetric(item, label: "Last", short: "L")
-                        quoteMetric(item, label: "Close", short: "C")
-                        quoteMetric(item, label: "Day High", short: "H")
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
                     if let trendItem = trendItem(for: item.symbol) {
-                        HStack(spacing: 6) {
-                            trendBadge(text: trendAction(trendItem), color: trendColor(trendItem))
-                            trendBadge(text: trendStatus(trendItem), color: trendStatusColor(trendItem))
-                        }
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(alignment: .center, spacing: 8) {
+                                trendBadge(
+                                    text: trendDisplayStatus(trendItem),
+                                    color: trendDisplayColor(trendItem),
+                                    prominent: true
+                                )
 
-                        LazyVGrid(
-                            columns: [
-                                GridItem(.flexible(minimum: 54), alignment: .leading),
-                                GridItem(.flexible(minimum: 54), alignment: .leading),
-                                GridItem(.flexible(minimum: 54), alignment: .leading),
-                                GridItem(.flexible(minimum: 54), alignment: .leading)
-                            ],
-                            alignment: .leading,
-                            spacing: 6
-                        ) {
-                            trendMetric(label: "Score", value: formatScore(trendItem.score))
-                            trendMetric(label: "Trend Last", value: formatOptionalMoney(trendItem.last))
-                            trendMetric(label: "SMA20", value: formatOptionalMoney(trendItem.sma20))
-                            trendMetric(label: "SMA50", value: formatOptionalMoney(trendItem.sma50))
-                            trendMetric(label: "52W", value: formatCompactPercent(trendItem.fromHighPct))
-                            trendMetric(label: "Priority", value: formatOptionalInt(trendItem.priority))
-                            trendMetric(label: "Data", value: formatOptionalBool(trendItem.dataAvailable))
-                            trendMetric(label: "Visible", value: formatOptionalBool(trendItem.visible))
-                        }
-
-                        VStack(alignment: .leading, spacing: 3) {
-                            ForEach(trendDetailLines(trendItem), id: \.self) { line in
-                                Text(line)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-
-                            if !trendItem.reasonCodes.isEmpty {
-                                Text("Codes: \(trendItem.reasonCodes.joined(separator: ", "))")
-                                    .font(.caption2)
+                                Text(trendShortReason(trendItem))
+                                    .font(.system(size: 15, weight: .medium))
                                     .foregroundColor(.secondary)
                                     .lineLimit(2)
-                                    .minimumScaleFactor(0.8)
+
+                                Spacer(minLength: 0)
+                            }
+
+                            HStack(spacing: 10) {
+                                trendSummaryPill(text: trendStrengthText(trendItem), color: trendStrengthColor(trendItem))
+                                trendSummaryPill(text: "Priority \(formatOptionalInt(trendItem.priority))", color: .secondary)
+                            }
+
+                            Button {
+                                toggleTrendDetails(for: item.symbol)
+                            } label: {
+                                Text(expandedTrendSymbols.contains(item.symbol) ? "Hide details" : "Details")
+                                    .font(.caption)
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundColor(.secondary)
+                        }
+
+                        if expandedTrendSymbols.contains(item.symbol) {
+                            LazyVGrid(
+                                columns: [
+                                    GridItem(.flexible(minimum: 54), alignment: .leading),
+                                    GridItem(.flexible(minimum: 54), alignment: .leading),
+                                    GridItem(.flexible(minimum: 54), alignment: .leading),
+                                    GridItem(.flexible(minimum: 54), alignment: .leading)
+                                ],
+                                alignment: .leading,
+                                spacing: 6
+                            ) {
+                                trendMetric(label: "Score", value: formatScore(trendItem.score))
+                                trendMetric(label: "Trend Last", value: formatOptionalMoney(trendItem.last))
+                                trendMetric(label: "SMA20", value: formatOptionalMoney(trendItem.sma20))
+                                trendMetric(label: "SMA50", value: formatOptionalMoney(trendItem.sma50))
+                                trendMetric(label: "52W", value: formatCompactPercent(trendItem.fromHighPct))
+                                trendMetric(label: "Priority", value: formatOptionalInt(trendItem.priority))
+                                trendMetric(label: "Data", value: formatOptionalBool(trendItem.dataAvailable))
+                                trendMetric(label: "Visible", value: formatOptionalBool(trendItem.visible))
+                            }
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                ForEach(trendDetailLines(trendItem), id: \.self) { line in
+                                    Text(line)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+
+                                if !trendItem.reasonCodes.isEmpty {
+                                    Text("Codes: \(trendItem.reasonCodes.joined(separator: ", "))")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(2)
+                                        .minimumScaleFactor(0.8)
+                                }
                             }
                         }
                     }
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 10)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 14)
                 .background(Color(.secondarySystemBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             }
@@ -289,15 +319,27 @@ struct ContentView: View {
         .frame(minWidth: 78, alignment: .leading)
     }
 
-    private func trendBadge(text: String, color: Color) -> some View {
+    private func trendBadge(text: String, color: Color, prominent: Bool = false) -> some View {
         Text(text)
-            .font(.system(size: 11, weight: .semibold))
+            .font(.system(size: prominent ? 15 : 11, weight: .semibold))
             .foregroundColor(color)
             .lineLimit(1)
             .minimumScaleFactor(0.7)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .background(color.opacity(0.12))
+            .padding(.horizontal, prominent ? 10 : 6)
+            .padding(.vertical, prominent ? 6 : 3)
+            .background(color.opacity(prominent ? 0.16 : 0.12))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    private func trendSummaryPill(text: String, color: Color) -> some View {
+        Text(text)
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundColor(color)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(color.opacity(0.10))
             .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 
@@ -698,12 +740,150 @@ struct ContentView: View {
         trendWatchlistItems.first { $0.symbol.caseInsensitiveCompare(symbol) == .orderedSame }
     }
 
+    private func currentPriceText(_ item: SymbolStatus) -> String {
+        if let lastPrice = item.lastPrice {
+            return formatMoney(lastPrice)
+        }
+
+        if let last = item.lines.first(where: { $0.label == "Last" })?.value {
+            return "$\(last)"
+        }
+
+        return "--"
+    }
+
+    private func toggleTrendDetails(for symbol: String) {
+        if expandedTrendSymbols.contains(symbol) {
+            expandedTrendSymbols.remove(symbol)
+        } else {
+            expandedTrendSymbols.insert(symbol)
+        }
+    }
+
     private func trendAction(_ item: TrendWatchlistItem) -> String {
         item.action ?? item.actionHint ?? item.status ?? "NEUTRAL"
     }
 
     private func trendStatus(_ item: TrendWatchlistItem) -> String {
         item.status ?? "neutral"
+    }
+
+    private func trendDisplayStatus(_ item: TrendWatchlistItem) -> String {
+        if isTrendBlocked(item) {
+            return "BLOCKED"
+        }
+
+        switch trendAction(item).uppercased() {
+        case "BUY_CANDIDATE":
+            return "BUY CANDIDATE"
+        default:
+            return "HOLD"
+        }
+    }
+
+    private func trendDisplayColor(_ item: TrendWatchlistItem) -> Color {
+        switch trendDisplayStatus(item) {
+        case "BUY CANDIDATE":
+            return .green
+        case "BLOCKED":
+            return .orange
+        default:
+            return .blue
+        }
+    }
+
+    private func trendShortReason(_ item: TrendWatchlistItem) -> String {
+        let rawReason = firstTrendReason(item)
+
+        if isATRBlocked(item) {
+            return "ATR Blocked"
+        }
+
+        if isNearHigh(item) {
+            return "Near 52w High"
+        }
+
+        if trendAction(item).uppercased() == "BUY_CANDIDATE" || trendStatus(item).lowercased() == "strong" {
+            return "Strong Trend"
+        }
+
+        if let rawReason {
+            return conciseTrendText(rawReason)
+        }
+
+        return "Holding"
+    }
+
+    private func trendStrengthText(_ item: TrendWatchlistItem) -> String {
+        if trendStatus(item).lowercased() == "strong" || (item.score ?? 0) >= 70 {
+            return "Strong Trend"
+        }
+
+        if trendStatus(item).lowercased() == "weak" {
+            return "Weak Trend"
+        }
+
+        return "Holding"
+    }
+
+    private func trendStrengthColor(_ item: TrendWatchlistItem) -> Color {
+        switch trendStrengthText(item) {
+        case "Strong Trend":
+            return .green
+        case "Weak Trend":
+            return .red
+        default:
+            return .blue
+        }
+    }
+
+    private func isTrendBlocked(_ item: TrendWatchlistItem) -> Bool {
+        let action = trendAction(item).uppercased()
+        let status = trendStatus(item).lowercased()
+
+        return isATRBlocked(item)
+            || action.contains("AVOID")
+            || action.contains("COOLDOWN")
+            || status.contains("avoid")
+            || status.contains("cooldown")
+    }
+
+    private func isATRBlocked(_ item: TrendWatchlistItem) -> Bool {
+        let text = ([item.cooldownReason, item.cooldownEffect].compactMap { $0 } + item.reasons + item.reasonCodes)
+            .joined(separator: " ")
+            .lowercased()
+
+        return text.contains("atr")
+    }
+
+    private func isNearHigh(_ item: TrendWatchlistItem) -> Bool {
+        guard let fromHighPct = item.fromHighPct else {
+            return false
+        }
+
+        return abs(fromHighPct) <= 3
+    }
+
+    private func firstTrendReason(_ item: TrendWatchlistItem) -> String? {
+        ([item.cooldownReason, item.cooldownEffect].compactMap { $0 } + item.reasons)
+            .first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+
+    private func conciseTrendText(_ value: String) -> String {
+        let cleaned = value
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: ":", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if cleaned.localizedCaseInsensitiveContains("cooldown") {
+            return "Holding"
+        }
+
+        if cleaned.count <= 28 {
+            return cleaned.capitalized
+        }
+
+        return String(cleaned.prefix(25)).trimmingCharacters(in: .whitespacesAndNewlines) + "..."
     }
 
     private func trendColor(_ item: TrendWatchlistItem) -> Color {

@@ -259,6 +259,11 @@ final class APIClient {
             do {
                 let decoded = try JSONDecoder().decode(BuyLowSummaryResponse.self, from: data)
 
+                if self.shouldOmitBuyLowStatus(decoded, requestedSymbol: symbol) {
+                    completion(nil, nil)
+                    return
+                }
+
                 guard decoded.ok else {
                     fail(decoded.error ?? "BuyLow summary unavailable")
                     return
@@ -279,6 +284,25 @@ final class APIClient {
                 fail("BuyLow summary decode error: \(error.localizedDescription). Body: \(body)")
             }
         }.resume()
+    }
+
+    private func shouldOmitBuyLowStatus(_ response: BuyLowSummaryResponse, requestedSymbol: String) -> Bool {
+        if response.omit == true || response.display == false || response.reason == "no_symbol_log_data" {
+            return true
+        }
+
+        guard let summary = response.summary else {
+            return false
+        }
+
+        let displayText = summary.displayText ?? ""
+        let isNoRecentPlaceholder = displayText.localizedCaseInsensitiveContains("No recent")
+            && displayText.localizedCaseInsensitiveContains("BuyLow status")
+        let hasNoMatchedSymbolLines = summary.matchedSymbolLineCount == 0
+        let isWaitLike = (summary.status ?? "").localizedCaseInsensitiveContains("WAIT")
+            || (summary.rawStatus ?? "").localizedCaseInsensitiveContains("UNKNOWN")
+
+        return isNoRecentPlaceholder && (hasNoMatchedSymbolLines || isWaitLike)
     }
 
     private func buyLowDisplayStatus(_ summary: BuyLowSummaryPayload?) -> String {

@@ -13,6 +13,7 @@ struct BuyLowView: View {
     @State private var loadingSymbols: Set<String> = []
     @State private var activeFetchCount = 0
     @State private var isFetchingLogs = false
+    @State private var completedFetchCount = 0
 
     private var isLoading: Bool {
         isFetchingLogs
@@ -123,6 +124,7 @@ struct BuyLowView: View {
 
         isFetchingLogs = true
         activeFetchCount += symbolsToLoad.count
+        completedFetchCount = 0
         loadingSymbols.formUnion(symbolsToLoad)
         errorMessage = ""
 
@@ -131,6 +133,7 @@ struct BuyLowView: View {
                 DispatchQueue.main.async {
                     self.loadingSymbols.remove(symbol)
                     self.activeFetchCount = max(0, self.activeFetchCount - 1)
+                    self.completedFetchCount += 1
                     if self.activeFetchCount == 0 {
                         self.isFetchingLogs = false
                     }
@@ -142,18 +145,27 @@ struct BuyLowView: View {
                         } else {
                             self.upsert(status)
                         }
+                        self.logRenderedRowsIfComplete()
                         return
                     }
 
                     let oldStatus = self.statuses.first { $0.symbol == symbol }
-                    if let oldStatus, self.isTimeoutMessage(error) {
+                    if error == nil {
+                        self.statuses.removeAll { $0.symbol == symbol }
+                    } else if let oldStatus, self.isTimeoutMessage(error) {
                         self.upsert(oldStatus.markedStale())
                     } else if let error {
                         self.errorMessage = "\(symbol): \(error)"
                     }
+                    self.logRenderedRowsIfComplete()
                 }
             }
         }
+    }
+
+    private func logRenderedRowsIfComplete() {
+        guard activeFetchCount == 0 else { return }
+        print("[BUYLOW_UI] fetched_symbols=\(completedFetchCount) rendered_rows=\(statuses.count)")
     }
 
     private func upsert(_ status: BuyLowStatus) {

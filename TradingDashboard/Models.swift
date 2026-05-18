@@ -394,6 +394,7 @@ nonisolated struct BuyLowSummaryPayload: Decodable {
     let target: Double?
     let currentExposurePct: Double?
     let expCapPct: Double?
+    let matchedSymbolLineCount: Int?
 
     enum CodingKeys: String, CodingKey {
         case status
@@ -425,6 +426,7 @@ nonisolated struct BuyLowSummaryPayload: Decodable {
         case exposurePct = "exposure_pct"
         case expCapPct = "exp_cap_pct"
         case expCapPctCamel = "expCapPct"
+        case matchedSymbolLineCount = "matched_symbol_line_count"
     }
 
     init(from decoder: Decoder) throws {
@@ -458,6 +460,7 @@ nonisolated struct BuyLowSummaryPayload: Decodable {
             ?? Self.decodeDouble(container, .exposurePct)
         expCapPct = Self.decodeDouble(container, .expCapPct)
             ?? Self.decodeDouble(container, .expCapPctCamel)
+        matchedSymbolLineCount = Self.decodeInt(container, .matchedSymbolLineCount)
     }
 
     private static func decodeDouble(
@@ -472,6 +475,19 @@ nonisolated struct BuyLowSummaryPayload: Decodable {
         }
         return nil
     }
+
+    private static func decodeInt(
+        _ container: KeyedDecodingContainer<CodingKeys>,
+        _ key: CodingKeys
+    ) -> Int? {
+        if let value = try? container.decodeIfPresent(Int.self, forKey: key) {
+            return value
+        }
+        if let text = try? container.decodeIfPresent(String.self, forKey: key) {
+            return Int(text.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        return nil
+    }
 }
 
 nonisolated struct BuyLowSummaryResponse: Decodable {
@@ -481,6 +497,9 @@ nonisolated struct BuyLowSummaryResponse: Decodable {
     let symbol: String?
     let summary: BuyLowSummaryPayload?
     let error: String?
+    let reason: String?
+    let display: Bool?
+    let omit: Bool?
 }
 
 nonisolated struct BuyLowStatus: Identifiable {

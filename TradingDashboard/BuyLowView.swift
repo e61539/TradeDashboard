@@ -60,7 +60,7 @@ struct BuyLowView: View {
             }
 
             if statuses.isEmpty && !isLoading && errorMessage.isEmpty {
-                Text("No BuyLow logs")
+                Text("No active BuyLow logs")
                     .font(.headline)
                     .foregroundColor(.secondary)
             }

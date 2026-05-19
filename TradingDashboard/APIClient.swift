@@ -270,6 +270,11 @@ final class APIClient {
                 }
 
                 let summary = decoded.summary
+                guard summary != nil else {
+                    completion(nil, nil)
+                    return
+                }
+
                 let status = BuyLowStatus(
                     symbol: symbol,
                     status: self.buyLowDisplayStatus(summary),
@@ -558,7 +563,7 @@ final class APIClient {
         }
     }
 
-    private func previewOrder(
+    func previewOrder(
         tradeBaseURL: String,
         apiKey: String,
         symbol: String,
@@ -616,7 +621,7 @@ final class APIClient {
         }.resume()
     }
 
-    private func confirmOrder(
+    func confirmOrder(
         tradeBaseURL: String,
         apiKey: String,
         previewID: String,

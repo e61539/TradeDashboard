@@ -27,7 +27,9 @@ nonisolated struct QuoteResponse: Codable {
 
 // MARK: - Trading API
 
-nonisolated struct PreviewResponse: Codable {
+nonisolated struct PreviewResponse: Decodable, Identifiable {
+    var id: String { preview_id }
+
     let ok: Bool?
     let preview_id: String
     let confirm_code: String
@@ -36,6 +38,76 @@ nonisolated struct PreviewResponse: Codable {
     let qty: Int?
     let expires_in_sec: Int?
     let acct: String?
+    let estimatedPrice: Double?
+    let suggestedLimitPrice: Double?
+    let estimatedNotional: Double?
+    let cashAfterOrder: Double?
+    let status: String?
+    let message: String?
+    let broker_result: BrokerResult?
+
+    enum CodingKeys: String, CodingKey {
+        case ok
+        case preview_id
+        case confirm_code
+        case symbol
+        case side
+        case qty
+        case expires_in_sec
+        case acct
+        case estimatedPrice = "estimated_price"
+        case riskEstPrice = "risk_est_price"
+        case estPrice = "est_price"
+        case suggestedLimitPrice = "suggested_limit_price"
+        case riskPriceLimit = "risk_price_limit"
+        case limitPrice = "limit_price"
+        case estimatedNotional = "estimated_notional"
+        case riskEstNotional = "risk_est_notional"
+        case cashAfterOrder = "cash_after_order"
+        case freeCashAfterOrder = "free_cash_after_order"
+        case status
+        case message
+        case broker_result
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        ok = try container.decodeIfPresent(Bool.self, forKey: .ok)
+        preview_id = try container.decode(String.self, forKey: .preview_id)
+        confirm_code = try container.decode(String.self, forKey: .confirm_code)
+        symbol = try container.decodeIfPresent(String.self, forKey: .symbol)
+        side = try container.decodeIfPresent(String.self, forKey: .side)
+        qty = try container.decodeIfPresent(Int.self, forKey: .qty)
+        expires_in_sec = try container.decodeIfPresent(Int.self, forKey: .expires_in_sec)
+        acct = try container.decodeIfPresent(String.self, forKey: .acct)
+        estimatedPrice = Self.decodeDouble(container, .estimatedPrice)
+            ?? Self.decodeDouble(container, .riskEstPrice)
+            ?? Self.decodeDouble(container, .estPrice)
+        suggestedLimitPrice = Self.decodeDouble(container, .suggestedLimitPrice)
+            ?? Self.decodeDouble(container, .riskPriceLimit)
+            ?? Self.decodeDouble(container, .limitPrice)
+        estimatedNotional = Self.decodeDouble(container, .estimatedNotional)
+            ?? Self.decodeDouble(container, .riskEstNotional)
+        cashAfterOrder = Self.decodeDouble(container, .cashAfterOrder)
+            ?? Self.decodeDouble(container, .freeCashAfterOrder)
+        status = try container.decodeIfPresent(String.self, forKey: .status)
+        message = try container.decodeIfPresent(String.self, forKey: .message)
+        broker_result = try container.decodeIfPresent(BrokerResult.self, forKey: .broker_result)
+    }
+
+    private static func decodeDouble(
+        _ container: KeyedDecodingContainer<CodingKeys>,
+        _ key: CodingKeys
+    ) -> Double? {
+        if let value = try? container.decodeIfPresent(Double.self, forKey: key) {
+            return value
+        }
+        if let text = try? container.decodeIfPresent(String.self, forKey: key) {
+            return Double(text.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        return nil
+    }
 }
 
 nonisolated struct BrokerResult: Codable {

@@ -10,6 +10,7 @@ struct ContentView: View {
     @State private var previousLastPrices: [String: Double] = [:]
     @State private var tradeMessage: String = ""
     @State private var pendingTrade: PendingTrade?
+    @State private var orderPreview: PreviewResponse?
     @State private var selectedQty: Int = 1
     @State private var positionsError: String = ""
     @State private var trendWatchlistItems: [TrendWatchlistItem] = []
@@ -91,8 +92,8 @@ struct ContentView: View {
             }
             .alert(
                 pendingTrade == nil
-                    ? "Confirm Trade"
-                    : "Confirm \(pendingTrade!.side.uppercased()) \(pendingTrade!.symbol)",
+                    ? "Preview Trade"
+                    : "Preview \(pendingTrade!.side.uppercased()) \(pendingTrade!.symbol)",
                 isPresented: Binding(
                     get: { pendingTrade != nil },
                     set: { newValue in
@@ -105,12 +106,15 @@ struct ContentView: View {
                     pendingTrade = nil
                 }
 
-                Button("Confirm") {
-                    placeOrder(symbol: trade.symbol, side: trade.side, qty: trade.qty)
+                Button("Preview") {
+                    previewOrder(symbol: trade.symbol, side: trade.side, qty: trade.qty)
                     pendingTrade = nil
                 }
             } message: { trade in
-                Text("Send a \(trade.side.uppercased()) order for \(trade.qty) share(s) of \(trade.symbol)?")
+                Text("Preview a \(trade.side.uppercased()) order for \(trade.qty) share(s) of \(trade.symbol).")
+            }
+            .sheet(item: $orderPreview) { preview in
+                orderPreviewSheet(preview)
             }
         }
     }
@@ -145,6 +149,73 @@ struct ContentView: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
+    }
+
+    private func orderPreviewSheet(_ preview: PreviewResponse) -> some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("\((preview.side ?? "").uppercased()) \(preview.symbol ?? "")")
+                    .font(.title2)
+                    .bold()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    previewRow("Estimated price", formatOptionalMoney(previewEstimatedPrice(preview)))
+                    previewRow("Suggested limit", formatOptionalMoney(previewSuggestedLimit(preview)))
+                    previewRow("Estimated notional", formatOptionalMoney(previewEstimatedNotional(preview)))
+                    previewRow("Cash after order", formatOptionalMoney(preview.cashAfterOrder))
+                    previewRow("Confirm code", preview.confirm_code)
+                }
+
+                if let message = preview.message ?? preview.broker_result?.message ?? preview.status, !message.isEmpty {
+                    Text(message)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+
+                Button {
+                    confirmOrder(preview)
+                } label: {
+                    Text("Confirm Order")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .padding()
+            .navigationTitle("Order Preview")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                Button("Cancel") {
+                    orderPreview = nil
+                }
+            }
+        }
+    }
+
+    private func previewRow(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label)
+                .foregroundColor(.secondary)
+            Spacer()
+            Text(value)
+                .font(.system(size: 16, weight: .semibold, design: .monospaced))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+    }
+
+    private func previewEstimatedPrice(_ preview: PreviewResponse) -> Double? {
+        preview.estimatedPrice ?? preview.broker_result?.risk_est_price
+    }
+
+    private func previewSuggestedLimit(_ preview: PreviewResponse) -> Double? {
+        preview.suggestedLimitPrice ?? preview.broker_result?.risk_price_limit
+    }
+
+    private func previewEstimatedNotional(_ preview: PreviewResponse) -> Double? {
+        preview.estimatedNotional ?? preview.broker_result?.risk_est_notional ?? preview.broker_result?.risk_max_notional
     }
 
     private var qtyBar: some View {
@@ -236,7 +307,7 @@ struct ContentView: View {
                                 Spacer(minLength: 0)
                             }
 
-                            Text(trendMarketCondition(trendItem))
+                            Text(trendMarketCondition(trendItem, quoteItem: item))
                                 .font(.system(size: 16, weight: .medium))
                                 .foregroundColor(.secondary)
                                 .lineLimit(1)
@@ -777,10 +848,10 @@ struct ContentView: View {
         return "Holding"
     }
 
-    private func trendMarketCondition(_ item: TrendWatchlistItem) -> String {
+    private func trendMarketCondition(_ item: TrendWatchlistItem, quoteItem: SymbolStatus) -> String {
         let action = trendAction(item).uppercased()
         let status = trendStatus(item).lowercased()
-        let closeSuffix = trendCloseText(item).map { " • \($0)" } ?? ""
+        let closeSuffix = trendCloseText(item, quoteItem: quoteItem).map { " • \($0)" } ?? ""
 
         if isCooldownActive(item) {
             return "Cooldown Active\(closeSuffix)"
@@ -806,12 +877,18 @@ struct ContentView: View {
         return "\(trendStrengthText(item))\(closeSuffix)"
     }
 
-    private func trendCloseText(_ item: TrendWatchlistItem) -> String? {
-        guard let close = item.close ?? item.previousClose else {
+    private func trendCloseText(_ item: TrendWatchlistItem, quoteItem: SymbolStatus) -> String? {
+        let quoteClose = quoteItem.lines.first { $0.label == "Close" }?.value
+
+        if let close = item.previousClose ?? item.close {
+            return String(format: "Prev Close %.2f", close)
+        }
+
+        guard let quoteClose else {
             return nil
         }
 
-        return String(format: "Close %.2f", close)
+        return "Prev Close \(quoteClose)"
     }
 
     private func trendStrengthText(_ item: TrendWatchlistItem) -> String {
@@ -971,6 +1048,79 @@ struct ContentView: View {
                 .minimumScaleFactor(0.75)
         }
         .frame(minWidth: 58, alignment: .leading)
+    }
+
+    private func previewOrder(symbol: String, side: String, qty: Int) {
+        tradeMessage = "Previewing \(side.uppercased()) \(symbol)..."
+
+        APIClient.shared.previewOrder(
+            tradeBaseURL: tradeBaseURL,
+            apiKey: tradeAPIKey,
+            symbol: symbol,
+            side: side,
+            qty: qty
+        ) { preview, error in
+            DispatchQueue.main.async {
+                if let error {
+                    self.tradeMessage = "Preview failed: \(error)"
+                    return
+                }
+
+                guard let preview else {
+                    self.tradeMessage = "Preview failed: no response"
+                    return
+                }
+
+                self.tradeMessage = ""
+                self.orderPreview = preview
+            }
+        }
+    }
+
+    private func confirmOrder(_ preview: PreviewResponse) {
+        tradeMessage = "Confirming order..."
+
+        APIClient.shared.confirmOrder(
+            tradeBaseURL: tradeBaseURL,
+            apiKey: tradeAPIKey,
+            previewID: preview.preview_id,
+            confirmCode: preview.confirm_code
+        ) { result, error in
+            DispatchQueue.main.async {
+                self.orderPreview = nil
+
+                if let error {
+                    self.tradeMessage = "failed: \(error)"
+                    return
+                }
+
+                guard let result else {
+                    self.tradeMessage = "failed: no response"
+                    return
+                }
+
+                let status = confirmDisplayStatus(result)
+                let message = result.broker_result?.message
+                self.tradeMessage = message.map { "\(status): \($0)" } ?? status
+                self.loadAll()
+            }
+        }
+    }
+
+    private func confirmDisplayStatus(_ result: ConfirmResult) -> String {
+        let status = (result.status ?? "").lowercased()
+
+        if status.contains("submitted") || status.contains("accepted") || status.contains("filled") {
+            return "submitted"
+        }
+        if status.contains("reject") {
+            return "rejected"
+        }
+        if status.contains("expire") {
+            return "expired"
+        }
+
+        return result.ok ? "submitted" : "failed"
     }
 
     private func placeOrder(symbol: String, side: String, qty: Int) {

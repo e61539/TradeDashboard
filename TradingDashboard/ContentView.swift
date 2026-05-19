@@ -152,7 +152,9 @@ struct ContentView: View {
     }
 
     private func orderPreviewSheet(_ preview: PreviewResponse) -> some View {
-        NavigationStack {
+        let canConfirm = canConfirmPreview(preview)
+
+        return NavigationStack {
             VStack(alignment: .leading, spacing: 14) {
                 Text("\((preview.side ?? "").uppercased()) \(preview.symbol ?? "")")
                     .font(.title2)
@@ -173,6 +175,12 @@ struct ContentView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
+                if !canConfirm {
+                    Text("Preview unavailable")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.orange)
+                }
+
                 Spacer()
 
                 Button {
@@ -182,6 +190,7 @@ struct ContentView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!canConfirm)
             }
             .padding()
             .navigationTitle("Order Preview")
@@ -216,6 +225,20 @@ struct ContentView: View {
 
     private func previewEstimatedNotional(_ preview: PreviewResponse) -> Double? {
         preview.estimatedNotional ?? preview.broker_result?.risk_est_notional ?? preview.broker_result?.risk_max_notional
+    }
+
+    private func isValidPreviewPrice(_ value: Double?) -> Bool {
+        guard let value else {
+            return false
+        }
+        return value.isFinite && value > 0
+    }
+
+    private func canConfirmPreview(_ preview: PreviewResponse) -> Bool {
+        !preview.preview_id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !preview.confirm_code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && isValidPreviewPrice(previewEstimatedPrice(preview))
+            && isValidPreviewPrice(previewSuggestedLimit(preview))
     }
 
     private var qtyBar: some View {
@@ -281,12 +304,15 @@ struct ContentView: View {
 
                         Spacer(minLength: 8)
 
-                        Button("Buy") {
+                        let canTrade = canTrade(item.symbol)
+
+                        Button(canTrade ? "Buy" : "Watch Only") {
+                            guard canTrade else { return }
                             pendingTrade = PendingTrade(symbol: item.symbol, side: "buy", qty: selectedQty)
                         }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
-                        .disabled(!AppConfig.enableTrading)
+                        .disabled(!AppConfig.enableTrading || !canTrade)
                     }
 
                     if let trendItem = trendItem(for: item.symbol) {
@@ -765,6 +791,13 @@ struct ContentView: View {
         trendWatchlistItems.first { $0.symbol.caseInsensitiveCompare(symbol) == .orderedSame }
     }
 
+    private func canTrade(_ symbol: String) -> Bool {
+        guard let item = trendItem(for: symbol) else {
+            return true
+        }
+        return item.canTrade ?? true
+    }
+
     private func currentPriceText(_ item: SymbolStatus) -> String {
         if let lastPrice = item.lastPrice {
             return formatMoney(lastPrice)
@@ -1051,6 +1084,11 @@ struct ContentView: View {
     }
 
     private func previewOrder(symbol: String, side: String, qty: Int) {
+        guard canTrade(symbol) else {
+            tradeMessage = "\(symbol) is watch only"
+            return
+        }
+
         tradeMessage = "Previewing \(side.uppercased()) \(symbol)..."
 
         APIClient.shared.previewOrder(
@@ -1071,6 +1109,13 @@ struct ContentView: View {
                     return
                 }
 
+                guard self.canConfirmPreview(preview) else {
+                    let message = preview.message ?? preview.broker_result?.message ?? preview.status
+                    self.tradeMessage = message.map { "Preview unavailable: \($0)" } ?? "Preview unavailable"
+                    self.orderPreview = nil
+                    return
+                }
+
                 self.tradeMessage = ""
                 self.orderPreview = preview
             }
@@ -1078,6 +1123,12 @@ struct ContentView: View {
     }
 
     private func confirmOrder(_ preview: PreviewResponse) {
+        guard canConfirmPreview(preview) else {
+            tradeMessage = "Preview unavailable"
+            orderPreview = nil
+            return
+        }
+
         tradeMessage = "Confirming order..."
 
         APIClient.shared.confirmOrder(

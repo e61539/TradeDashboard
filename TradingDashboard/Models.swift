@@ -171,6 +171,7 @@ nonisolated struct TrendWatchlistItem: Decodable, Identifiable {
     let reasons: [String]
     let reasonCodes: [String]
     let buyEnabled: Bool?
+    let canTrade: Bool?
     let visible: Bool?
     let dataAvailable: Bool?
 
@@ -195,6 +196,8 @@ nonisolated struct TrendWatchlistItem: Decodable, Identifiable {
         case reasons
         case reasonCodes = "reason_codes"
         case buyEnabled = "buy_enabled"
+        case canTrade = "can_trade"
+        case canTradeCamel = "canTrade"
         case visible
         case dataAvailable = "data_available"
     }
@@ -222,6 +225,7 @@ nonisolated struct TrendWatchlistItem: Decodable, Identifiable {
         reasons = try container.decodeIfPresent([String].self, forKey: .reasons) ?? []
         reasonCodes = try container.decodeIfPresent([String].self, forKey: .reasonCodes) ?? []
         buyEnabled = try container.decodeIfPresent(Bool.self, forKey: .buyEnabled)
+        canTrade = Self.decodeBool(container, .canTrade) ?? Self.decodeBool(container, .canTradeCamel)
         visible = try container.decodeIfPresent(Bool.self, forKey: .visible)
         dataAvailable = try container.decodeIfPresent(Bool.self, forKey: .dataAvailable)
     }
@@ -248,6 +252,28 @@ nonisolated struct TrendWatchlistItem: Decodable, Identifiable {
         }
         if let text = try? container.decodeIfPresent(String.self, forKey: key) {
             return Int(text.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        return nil
+    }
+
+    private static func decodeBool(
+        _ container: KeyedDecodingContainer<CodingKeys>,
+        _ key: CodingKeys
+    ) -> Bool? {
+        if let value = try? container.decodeIfPresent(Bool.self, forKey: key) {
+            return value
+        }
+        if let intValue = try? container.decodeIfPresent(Int.self, forKey: key) {
+            return intValue != 0
+        }
+        if let text = try? container.decodeIfPresent(String.self, forKey: key) {
+            let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if ["true", "yes", "1"].contains(normalized) {
+                return true
+            }
+            if ["false", "no", "0"].contains(normalized) {
+                return false
+            }
         }
         return nil
     }

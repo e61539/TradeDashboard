@@ -4,6 +4,26 @@ final class APIClient {
     static let shared = APIClient()
     private init() {}
 
+    private func apiErrorMessage(data: Data?, statusCode: Int) -> String {
+        guard let data, !data.isEmpty else {
+            return "HTTP \(statusCode)"
+        }
+
+        if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            for key in ["detail", "message", "error"] {
+                if let text = object[key] as? String, !text.isEmpty {
+                    return text
+                }
+                if let details = object[key] as? [String], !details.isEmpty {
+                    return details.joined(separator: ", ")
+                }
+            }
+        }
+
+        let body = String(data: data, encoding: .utf8) ?? ""
+        return body.isEmpty ? "HTTP \(statusCode)" : body
+    }
+
     func fetchTrendWatchlist(
         baseURL: String,
         apiKey: String,
@@ -34,8 +54,13 @@ final class APIClient {
                 return
             }
 
-            guard let data, (200...299).contains(http.statusCode) else {
-                completion(nil, "HTTP \(http.statusCode)")
+            guard (200...299).contains(http.statusCode) else {
+                completion(nil, self.apiErrorMessage(data: data, statusCode: http.statusCode))
+                return
+            }
+
+            guard let data else {
+                completion(nil, "No Trend Rider watchlist response body")
                 return
             }
 
@@ -73,8 +98,13 @@ final class APIClient {
                 return
             }
 
-            guard let data, (200...299).contains(http.statusCode) else {
-                completion(nil, "HTTP \(http.statusCode)")
+            guard (200...299).contains(http.statusCode) else {
+                completion(nil, self.apiErrorMessage(data: data, statusCode: http.statusCode))
+                return
+            }
+
+            guard let data else {
+                completion(nil, "No preview response body")
                 return
             }
 

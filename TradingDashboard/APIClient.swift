@@ -10,18 +10,42 @@ final class APIClient {
         }
 
         if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            for key in ["detail", "message", "error"] {
-                if let text = object[key] as? String, !text.isEmpty {
-                    return text
-                }
-                if let details = object[key] as? [String], !details.isEmpty {
-                    return details.joined(separator: ", ")
-                }
+            if let message = apiErrorMessage(from: object) {
+                return message
             }
         }
 
         let body = String(data: data, encoding: .utf8) ?? ""
         return body.isEmpty ? "HTTP \(statusCode)" : body
+    }
+
+    private func apiErrorMessage(from object: [String: Any]) -> String? {
+        for key in ["detail", "message", "error", "status"] {
+            if let text = object[key] as? String {
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    return trimmed
+                }
+            }
+            if let details = object[key] as? [String], !details.isEmpty {
+                let joined = details
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+                    .joined(separator: ", ")
+                if !joined.isEmpty {
+                    return joined
+                }
+            }
+        }
+
+        for key in ["broker_result", "result"] {
+            if let nested = object[key] as? [String: Any],
+               let message = apiErrorMessage(from: nested) {
+                return message
+            }
+        }
+
+        return nil
     }
 
     func fetchTrendWatchlist(
@@ -641,8 +665,13 @@ final class APIClient {
                 return
             }
 
-            guard let data, (200...299).contains(http.statusCode) else {
-                completion(nil, "HTTP \(http.statusCode)")
+            guard (200...299).contains(http.statusCode) else {
+                completion(nil, self.apiErrorMessage(data: data, statusCode: http.statusCode))
+                return
+            }
+
+            guard let data else {
+                completion(nil, "No preview response body")
                 return
             }
 
@@ -697,8 +726,13 @@ final class APIClient {
                 return
             }
 
-            guard let data, (200...299).contains(http.statusCode) else {
-                completion(nil, "HTTP \(http.statusCode)")
+            guard (200...299).contains(http.statusCode) else {
+                completion(nil, self.apiErrorMessage(data: data, statusCode: http.statusCode))
+                return
+            }
+
+            guard let data else {
+                completion(nil, "No confirm response body")
                 return
             }
 

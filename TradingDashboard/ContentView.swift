@@ -1218,10 +1218,10 @@ struct ContentView: View {
                 let status = confirmDisplayStatus(result)
                 let message = result.broker_result?.message
                 if status == "submitted" {
-                    self.tradeMessage = message.map { "Order submitted: \($0)" } ?? "Order submitted"
+                    self.tradeMessage = "Order submitted"
                 } else {
-                    let detail = message ?? result.status
-                    self.tradeMessage = detail.map { "\(status): \($0)" } ?? status
+                    let detail = confirmDetailMessage(message ?? result.status)
+                    self.tradeMessage = confirmFailureMessage(status: status, detail: detail)
                     if requiresNewPreview(status, detail) {
                         self.tradeMessage += ". New preview required."
                     }
@@ -1232,16 +1232,25 @@ struct ContentView: View {
     }
 
     private func confirmDisplayStatus(_ result: ConfirmResult) -> String {
-        let status = (result.status ?? "").lowercased()
+        let text = [result.status, result.broker_result?.message]
+            .compactMap { $0 }
+            .joined(separator: " ")
+            .lowercased()
 
-        if status.contains("submitted") || status.contains("accepted") || status.contains("filled") {
-            return "submitted"
+        if text.contains("duplicate") {
+            return "duplicate"
         }
-        if status.contains("reject") {
+        if text.contains("reject") {
             return "rejected"
         }
-        if status.contains("expire") {
+        if text.contains("expire") {
             return "expired"
+        }
+        if text.contains("drift") || text.contains("price") || text.contains("quote") {
+            return "price drift"
+        }
+        if result.ok && (text.contains("submitted") || text.contains("accepted") || text.contains("filled")) {
+            return "submitted"
         }
 
         return result.ok ? "submitted" : "failed"
@@ -1249,11 +1258,47 @@ struct ContentView: View {
 
     private func confirmFailureMessage(_ error: String) -> String {
         let status = confirmDisplayStatus(error)
-        var message = "\(status): \(error)"
+        let detail = confirmDetailMessage(error)
+        var message = confirmFailureMessage(status: status, detail: detail)
         if requiresNewPreview(status, error) {
             message += ". New preview required."
         }
         return message
+    }
+
+    private func confirmFailureMessage(status: String, detail: String?) -> String {
+        let prefix: String
+        switch status {
+        case "duplicate":
+            prefix = "Duplicate confirm"
+        case "expired":
+            prefix = "Preview expired"
+        case "rejected":
+            prefix = "Order rejected"
+        case "price drift":
+            prefix = "Price changed"
+        default:
+            prefix = "Confirm failed"
+        }
+
+        guard let detail, !detail.isEmpty else {
+            return prefix
+        }
+
+        return "\(prefix): \(detail)"
+    }
+
+    private func confirmDetailMessage(_ text: String?) -> String? {
+        guard let text else {
+            return nil
+        }
+
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return nil
+        }
+
+        return trimmed
     }
 
     private func confirmDisplayStatus(_ text: String) -> String {
@@ -1267,8 +1312,8 @@ struct ContentView: View {
         if lower.contains("reject") {
             return "rejected"
         }
-        if lower.contains("drift") || lower.contains("price") {
-            return "failed"
+        if lower.contains("drift") || lower.contains("price") || lower.contains("quote") {
+            return "price drift"
         }
         return "failed"
     }

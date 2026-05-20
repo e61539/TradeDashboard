@@ -161,8 +161,13 @@ final class APIClient {
                 return
             }
 
-            guard let data, (200...299).contains(http.statusCode) else {
-                completion(nil, "HTTP \(http.statusCode)")
+            guard (200...299).contains(http.statusCode) else {
+                completion(nil, self.apiErrorMessage(data: data, statusCode: http.statusCode))
+                return
+            }
+
+            guard let data else {
+                completion(nil, "No confirm response body")
                 return
             }
 

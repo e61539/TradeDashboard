@@ -11,6 +11,8 @@ struct ContentView: View {
     @State private var tradeMessage: String = ""
     @State private var pendingTrade: PendingTrade?
     @State private var orderPreview: PreviewResponse?
+    @State private var orderPreviewCreatedAt: Date?
+    @State private var isConfirmingOrder = false
     @State private var selectedQty: Int = 1
     @State private var positionsError: String = ""
     @State private var trendWatchlistItems: [TrendWatchlistItem] = []
@@ -152,51 +154,61 @@ struct ContentView: View {
     }
 
     private func orderPreviewSheet(_ preview: PreviewResponse) -> some View {
-        let canConfirm = canConfirmPreview(preview)
+        let createdAt = orderPreviewCreatedAt ?? Date()
 
         return NavigationStack {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("\((preview.side ?? "").uppercased()) \(preview.symbol ?? "")")
-                    .font(.title2)
-                    .bold()
+            TimelineView(.periodic(from: createdAt, by: 1)) { context in
+                let previewExpired = isPreviewExpired(preview, createdAt: createdAt, now: context.date)
+                let canConfirm = canConfirmPreview(preview) && !previewExpired && !isConfirmingOrder
 
-                VStack(alignment: .leading, spacing: 8) {
-                    previewRow("Estimated price", formatOptionalMoney(previewEstimatedPrice(preview)))
-                    previewRow("Suggested limit", formatOptionalMoney(previewSuggestedLimit(preview)))
-                    previewRow("Estimated notional", formatOptionalMoney(previewEstimatedNotional(preview)))
-                    previewRow("Cash after order", formatOptionalMoney(preview.cashAfterOrder))
-                    previewRow("Confirm code", preview.confirm_code)
-                }
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("\((preview.side ?? "").uppercased()) \(preview.symbol ?? "")")
+                        .font(.title2)
+                        .bold()
 
-                if let message = preview.message ?? preview.broker_result?.message ?? preview.status, !message.isEmpty {
-                    Text(message)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                    VStack(alignment: .leading, spacing: 8) {
+                        previewRow("Estimated price", formatOptionalMoney(previewEstimatedPrice(preview)))
+                        previewRow("Suggested limit", formatOptionalMoney(previewSuggestedLimit(preview)))
+                        previewRow("Estimated notional", formatOptionalMoney(previewEstimatedNotional(preview)))
+                        previewRow("Cash after order", formatOptionalMoney(preview.cashAfterOrder))
+                        previewRow("Confirm code", preview.confirm_code)
+                    }
 
-                if !canConfirm {
-                    Text("Preview unavailable")
+                    Text(previewTimingText(preview, createdAt: createdAt, now: context.date))
                         .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.orange)
-                }
+                        .foregroundColor(previewTimingColor(preview, createdAt: createdAt, now: context.date))
 
-                Spacer()
+                    if let message = preview.message ?? preview.broker_result?.message ?? preview.status, !message.isEmpty {
+                        Text(message)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
 
-                Button {
-                    confirmOrder(preview)
-                } label: {
-                    Text("Confirm Order")
-                        .frame(maxWidth: .infinity)
+                    if !canConfirmPreview(preview) {
+                        Text("Preview unavailable")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(.orange)
+                    }
+
+                    Spacer()
+
+                    Button {
+                        confirmOrder(preview)
+                    } label: {
+                        Text(isConfirmingOrder ? "Confirming..." : "Confirm Order")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!canConfirm)
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(!canConfirm)
+                .padding()
             }
-            .padding()
             .navigationTitle("Order Preview")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 Button("Cancel") {
+                    isConfirmingOrder = false
                     orderPreview = nil
                 }
             }
@@ -239,6 +251,45 @@ struct ContentView: View {
             && !preview.confirm_code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && isValidPreviewPrice(previewEstimatedPrice(preview))
             && isValidPreviewPrice(previewSuggestedLimit(preview))
+    }
+
+    private func previewAgeSeconds(createdAt: Date, now: Date) -> Int {
+        max(0, Int(now.timeIntervalSince(createdAt)))
+    }
+
+    private func previewRemainingSeconds(_ preview: PreviewResponse, createdAt: Date, now: Date) -> Int? {
+        guard let expiresIn = preview.expires_in_sec else {
+            return nil
+        }
+        return expiresIn - previewAgeSeconds(createdAt: createdAt, now: now)
+    }
+
+    private func isPreviewExpired(_ preview: PreviewResponse, createdAt: Date?, now: Date = Date()) -> Bool {
+        guard let createdAt, let remaining = previewRemainingSeconds(preview, createdAt: createdAt, now: now) else {
+            return false
+        }
+        return remaining <= 0
+    }
+
+    private func previewTimingText(_ preview: PreviewResponse, createdAt: Date, now: Date) -> String {
+        let age = previewAgeSeconds(createdAt: createdAt, now: now)
+        if let remaining = previewRemainingSeconds(preview, createdAt: createdAt, now: now) {
+            if remaining <= 0 {
+                return "Preview expired. New preview required."
+            }
+            if remaining <= 10 {
+                return "Preview age \(age)s • expires in \(remaining)s"
+            }
+            return "Preview age \(age)s • expires in \(remaining)s"
+        }
+        return "Preview age \(age)s"
+    }
+
+    private func previewTimingColor(_ preview: PreviewResponse, createdAt: Date, now: Date) -> Color {
+        guard let remaining = previewRemainingSeconds(preview, createdAt: createdAt, now: now) else {
+            return .secondary
+        }
+        return remaining <= 10 ? .orange : .secondary
     }
 
     private var qtyBar: some View {
@@ -1117,6 +1168,8 @@ struct ContentView: View {
                 }
 
                 self.tradeMessage = ""
+                self.isConfirmingOrder = false
+                self.orderPreviewCreatedAt = Date()
                 self.orderPreview = preview
             }
         }
@@ -1129,6 +1182,17 @@ struct ContentView: View {
             return
         }
 
+        guard !isPreviewExpired(preview, createdAt: orderPreviewCreatedAt) else {
+            tradeMessage = "Preview expired. New preview required."
+            orderPreview = nil
+            return
+        }
+
+        guard !isConfirmingOrder else {
+            return
+        }
+
+        isConfirmingOrder = true
         tradeMessage = "Confirming order..."
 
         APIClient.shared.confirmOrder(
@@ -1138,10 +1202,11 @@ struct ContentView: View {
             confirmCode: preview.confirm_code
         ) { result, error in
             DispatchQueue.main.async {
+                self.isConfirmingOrder = false
                 self.orderPreview = nil
 
                 if let error {
-                    self.tradeMessage = "failed: \(error)"
+                    self.tradeMessage = self.confirmFailureMessage(error)
                     return
                 }
 
@@ -1152,7 +1217,15 @@ struct ContentView: View {
 
                 let status = confirmDisplayStatus(result)
                 let message = result.broker_result?.message
-                self.tradeMessage = message.map { "\(status): \($0)" } ?? status
+                if status == "submitted" {
+                    self.tradeMessage = message.map { "Order submitted: \($0)" } ?? "Order submitted"
+                } else {
+                    let detail = message ?? result.status
+                    self.tradeMessage = detail.map { "\(status): \($0)" } ?? status
+                    if requiresNewPreview(status, detail) {
+                        self.tradeMessage += ". New preview required."
+                    }
+                }
                 self.loadAll()
             }
         }
@@ -1172,6 +1245,40 @@ struct ContentView: View {
         }
 
         return result.ok ? "submitted" : "failed"
+    }
+
+    private func confirmFailureMessage(_ error: String) -> String {
+        let status = confirmDisplayStatus(error)
+        var message = "\(status): \(error)"
+        if requiresNewPreview(status, error) {
+            message += ". New preview required."
+        }
+        return message
+    }
+
+    private func confirmDisplayStatus(_ text: String) -> String {
+        let lower = text.lowercased()
+        if lower.contains("duplicate") {
+            return "duplicate"
+        }
+        if lower.contains("expire") {
+            return "expired"
+        }
+        if lower.contains("reject") {
+            return "rejected"
+        }
+        if lower.contains("drift") || lower.contains("price") {
+            return "failed"
+        }
+        return "failed"
+    }
+
+    private func requiresNewPreview(_ status: String, _ detail: String?) -> Bool {
+        let text = "\(status) \(detail ?? "")".lowercased()
+        return text.contains("expire")
+            || text.contains("drift")
+            || text.contains("price")
+            || text.contains("quote")
     }
 
     private func placeOrder(symbol: String, side: String, qty: Int) {

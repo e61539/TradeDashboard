@@ -390,6 +390,12 @@ struct ContentView: View {
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.82)
                         }
+                    } else {
+                        Text(trendCloseText(nil, quoteItem: item) ?? "Prev Close --")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.82)
                     }
                 }
                 .padding(.horizontal, 14)
@@ -735,8 +741,13 @@ struct ContentView: View {
                 return
             }
 
-            guard let data = data, (200...299).contains(httpResponse.statusCode) else {
-                completion(SymbolStatus(symbol: symbol, status: "ERROR", detail: "HTTP \((response as? HTTPURLResponse)?.statusCode ?? -1)", lines: [], lastPrice: nil))
+            guard (200...299).contains(httpResponse.statusCode) else {
+                completion(SymbolStatus(symbol: symbol, status: "ERROR", detail: httpErrorMessage(data: data, statusCode: httpResponse.statusCode), lines: [], lastPrice: nil))
+                return
+            }
+
+            guard let data else {
+                completion(SymbolStatus(symbol: symbol, status: "ERROR", detail: "No quote response body", lines: [], lastPrice: nil))
                 return
             }
 
@@ -758,6 +769,26 @@ struct ContentView: View {
                 completion(SymbolStatus(symbol: symbol, status: "ERROR", detail: "Decode error: \(error.localizedDescription). Body: \(bodyText)", lines: [], lastPrice: nil))
             }
         }.resume()
+    }
+
+    private func httpErrorMessage(data: Data?, statusCode: Int) -> String {
+        guard let data, !data.isEmpty else {
+            return "HTTP \(statusCode)"
+        }
+
+        if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            for key in ["detail", "message", "error", "status"] {
+                if let text = object[key] as? String {
+                    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty {
+                        return trimmed
+                    }
+                }
+            }
+        }
+
+        let body = String(data: data, encoding: .utf8) ?? ""
+        return body.isEmpty ? "HTTP \(statusCode)" : body
     }
 
     private func fetchPositions() {
@@ -961,10 +992,10 @@ struct ContentView: View {
         return "\(trendStrengthText(item))\(closeSuffix)"
     }
 
-    private func trendCloseText(_ item: TrendWatchlistItem, quoteItem: SymbolStatus) -> String? {
+    private func trendCloseText(_ item: TrendWatchlistItem?, quoteItem: SymbolStatus) -> String? {
         let quoteClose = quoteItem.lines.first { $0.label == "Close" }?.value
 
-        if let close = item.previousClose ?? item.close {
+        if let close = item?.previousClose ?? item?.close {
             return String(format: "Prev Close %.2f", close)
         }
 
@@ -1324,21 +1355,6 @@ struct ContentView: View {
             || text.contains("drift")
             || text.contains("price")
             || text.contains("quote")
-    }
-
-    private func placeOrder(symbol: String, side: String, qty: Int) {
-        APIClient.shared.placeOrder(
-            tradeBaseURL: tradeBaseURL,
-            apiKey: tradeAPIKey,
-            symbol: symbol,
-            side: side,
-            qty: qty
-        ) { message in
-            DispatchQueue.main.async {
-                self.tradeMessage = message
-                self.loadAll()
-            }
-        }
     }
 
     private func formatMoney(_ value: Double) -> String {

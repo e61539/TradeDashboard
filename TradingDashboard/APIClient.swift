@@ -310,8 +310,13 @@ final class APIClient {
                 return
             }
 
-            guard let data, (200...299).contains(http.statusCode) else {
-                fail("HTTP \(http.statusCode)")
+            guard (200...299).contains(http.statusCode) else {
+                fail(self.apiErrorMessage(data: data, statusCode: http.statusCode))
+                return
+            }
+
+            guard let data else {
+                fail("No BuyLow summary response body")
                 return
             }
 
@@ -574,52 +579,6 @@ final class APIClient {
         }
 
         return summary.status?.localizedCaseInsensitiveContains("READY") == true
-    }
-
-    func placeOrder(
-        tradeBaseURL: String,
-        apiKey: String,
-        symbol: String,
-        side: String,
-        qty: Int,
-        completion: @escaping (String) -> Void
-    ) {
-        previewOrder(
-            tradeBaseURL: tradeBaseURL,
-            apiKey: apiKey,
-            symbol: symbol,
-            side: side,
-            qty: qty
-        ) { preview, error in
-            if let error {
-                completion("Preview failed: \(error)")
-                return
-            }
-
-            guard let preview else {
-                completion("Preview failed: no response")
-                return
-            }
-
-            self.confirmOrder(
-                tradeBaseURL: tradeBaseURL,
-                apiKey: apiKey,
-                previewID: preview.preview_id,
-                confirmCode: preview.confirm_code
-            ) { result, error in
-                if let error {
-                    completion("Confirm failed: \(error)")
-                    return
-                }
-
-                if let result, result.ok {
-                    let msg = result.broker_result?.message ?? result.status ?? "order submitted"
-                    completion(msg)
-                } else {
-                    completion("Confirm failed")
-                }
-            }
-        }
     }
 
     func previewOrder(

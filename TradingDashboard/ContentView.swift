@@ -19,6 +19,10 @@ struct ContentView: View {
     @State private var trendWatchlistSymbols: [String] = []
     @State private var trendWatchlistError: String = ""
     @State private var expandedTrendSymbols: Set<String> = []
+    @State private var marketRegime: MarketRegimeResponse?
+    @State private var marketRegimeError: String = ""
+    @State private var intelligenceOpportunities: [IntelligenceOpportunity] = []
+    @State private var intelligenceError: String = ""
 
     @State private var assetTotal: Double = 0
     @State private var cashAvailable: Double?
@@ -47,6 +51,7 @@ struct ContentView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     topBar
+                    marketRegimeBanner
 
                     BuyLowView(baseURL: tradeBaseURL, apiKey: tradeAPIKey, symbols: symbols)
 
@@ -150,6 +155,46 @@ struct ContentView: View {
             Text("Connection: \(endpointResolver.activeRoute.rawValue)")
                 .font(.caption)
                 .foregroundColor(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var marketRegimeBanner: some View {
+        if let marketRegime {
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(displayRegime(marketRegime))
+                        .font(.system(size: 16, weight: .semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+
+                    Text("SPY \(formatSignedPercent(marketRegime.spyDayChangePct))")
+                        .font(.system(size: 14, weight: .medium, design: .monospaced))
+                        .foregroundColor(percentColor(marketRegime.spyDayChangePct))
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+
+                Text("Conf \(formatConfidencePercent(marketRegime.confidence))")
+                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(regimeColor(marketRegime).opacity(0.12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(regimeColor(marketRegime).opacity(0.22), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        } else if !marketRegimeError.isEmpty {
+            Text("Market regime unavailable: \(marketRegimeError)")
+                .font(.caption)
+                .foregroundColor(.orange)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -338,8 +383,17 @@ struct ContentView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            if !intelligenceError.isEmpty {
+                Text(intelligenceError)
+                    .font(.caption)
+                    .foregroundColor(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             ForEach(items) { item in
                 VStack(alignment: .leading, spacing: 12) {
+                    let intelligence = intelligenceOpportunity(for: item.symbol)
+
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(item.symbol)
@@ -364,6 +418,10 @@ struct ContentView: View {
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
                         .disabled(!AppConfig.enableTrading || !canTrade)
+                    }
+
+                    if let intelligence {
+                        intelligenceSummaryRow(intelligence)
                     }
 
                     if let trendItem = trendItem(for: item.symbol) {
@@ -437,6 +495,46 @@ struct ContentView: View {
             .padding(.vertical, prominent ? 6 : 3)
             .background(color.opacity(prominent ? 0.16 : 0.12))
             .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    private func intelligenceSummaryRow(_ item: IntelligenceOpportunity) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                trendBadge(
+                    text: intelligenceStateLabel(item),
+                    color: intelligenceStateColor(item),
+                    prominent: false
+                )
+
+                Text("Score \(formatScore(item.score))")
+                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    .lineLimit(1)
+
+                Text(displayRating(item.rating))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+
+                if item.buyLowReady == true {
+                    Text("BuyLow ready")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.green)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+
+                Spacer(minLength: 0)
+            }
+
+            if let pullback = pullbackTriggerText(item) {
+                Text(pullback)
+                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+            }
+        }
     }
 
     private func trendSummaryPill(text: String, color: Color) -> some View {
@@ -648,8 +746,43 @@ struct ContentView: View {
     }
 
     private func loadAll() {
+        fetchMarketRegime()
+        fetchIntelligenceOpportunities()
         fetchTrendWatchlistAndQuotes()
         fetchPositions()
+    }
+
+    private func fetchMarketRegime() {
+        APIClient.shared.fetchMarketRegime(baseURL: baseURL, apiKey: tradeAPIKey) { response, error in
+            DispatchQueue.main.async {
+                if let response {
+                    self.marketRegime = response
+                    self.marketRegimeError = ""
+                    return
+                }
+
+                self.marketRegime = nil
+                self.marketRegimeError = error ?? "unavailable"
+            }
+        }
+    }
+
+    private func fetchIntelligenceOpportunities() {
+        APIClient.shared.fetchIntelligenceOpportunities(baseURL: baseURL, apiKey: tradeAPIKey) { response, error in
+            DispatchQueue.main.async {
+                if let response {
+                    self.intelligenceOpportunities = response.opportunities
+                    self.intelligenceError = ""
+                    if self.marketRegime == nil, let regime = response.regime {
+                        self.marketRegime = regime
+                    }
+                    return
+                }
+
+                self.intelligenceOpportunities = []
+                self.intelligenceError = error.map { "Intelligence: \($0)" } ?? "Intelligence unavailable"
+            }
+        }
     }
 
     private func fetchTrendWatchlistAndQuotes() {
@@ -873,6 +1006,10 @@ struct ContentView: View {
         trendWatchlistItems.first { $0.symbol.caseInsensitiveCompare(symbol) == .orderedSame }
     }
 
+    private func intelligenceOpportunity(for symbol: String) -> IntelligenceOpportunity? {
+        intelligenceOpportunities.first { $0.symbol.caseInsensitiveCompare(symbol) == .orderedSame }
+    }
+
     private func canTrade(_ symbol: String) -> Bool {
         guard let item = trendItem(for: symbol) else {
             return true
@@ -902,6 +1039,102 @@ struct ContentView: View {
 
     private func trendAction(_ item: TrendWatchlistItem) -> String {
         item.action ?? item.actionHint ?? item.status ?? "NEUTRAL"
+    }
+
+    private func displayRegime(_ regime: MarketRegimeResponse) -> String {
+        let value = regime.regime?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let value, !value.isEmpty else {
+            return "Market UNKNOWN"
+        }
+        return "Market \(value.replacingOccurrences(of: "_", with: " ").uppercased())"
+    }
+
+    private func regimeColor(_ regime: MarketRegimeResponse) -> Color {
+        let value = (regime.regime ?? "").lowercased()
+        if value.contains("bull") || value.contains("risk_on") || value.contains("strong") {
+            return .green
+        }
+        if value.contains("bear") || value.contains("defensive") || value.contains("risk_off") {
+            return .orange
+        }
+        return .blue
+    }
+
+    private func percentColor(_ value: Double?) -> Color {
+        guard let value else {
+            return .secondary
+        }
+        if value > 0 {
+            return .green
+        }
+        if value < 0 {
+            return .red
+        }
+        return .secondary
+    }
+
+    private func displayRating(_ rating: String?) -> String {
+        let value = rating?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let value, !value.isEmpty else {
+            return "UNRATED"
+        }
+        return value.replacingOccurrences(of: "_", with: " ").uppercased()
+    }
+
+    private func intelligenceStateLabel(_ item: IntelligenceOpportunity) -> String {
+        if let state = item.state?.trimmingCharacters(in: .whitespacesAndNewlines), !state.isEmpty {
+            let normalized = state.replacingOccurrences(of: "_", with: " ").uppercased()
+            if normalized.contains("READY") {
+                return "READY"
+            }
+            if normalized.contains("NEAR HIGH") {
+                return "NEAR HIGH"
+            }
+            if normalized.contains("DEFENSIVE") {
+                return "DEFENSIVE"
+            }
+            if normalized.contains("WATCH") {
+                return "WATCH"
+            }
+        }
+
+        if item.buyLowReady == true {
+            return "READY"
+        }
+
+        if let distance = item.distanceTo52WHighPct {
+            let threshold = item.firstStageThresholdPct ?? 3.0
+            if abs(distance) <= threshold {
+                return "NEAR HIGH"
+            }
+        }
+
+        let rating = (item.rating ?? "").lowercased()
+        if rating.contains("defensive") || rating.contains("risk") || rating.contains("avoid") {
+            return "DEFENSIVE"
+        }
+
+        return "WATCH"
+    }
+
+    private func intelligenceStateColor(_ item: IntelligenceOpportunity) -> Color {
+        switch intelligenceStateLabel(item) {
+        case "READY":
+            return .green
+        case "NEAR HIGH", "DEFENSIVE":
+            return .orange
+        default:
+            return .blue
+        }
+    }
+
+    private func pullbackTriggerText(_ item: IntelligenceOpportunity) -> String? {
+        guard let distance = item.distanceTo52WHighPct else {
+            return nil
+        }
+
+        let trigger = item.firstStageThresholdPct ?? 3.0
+        return "\(formatCompactPercent(abs(distance))) / \(formatCompactPercent(trigger)) trigger"
     }
 
     private func trendStatus(_ item: TrendWatchlistItem) -> String {
@@ -1377,6 +1610,17 @@ struct ContentView: View {
     private func formatSigned(_ value: Double?) -> String {
         guard let value else { return "--" }
         return String(format: "%+.2f", value)
+    }
+
+    private func formatSignedPercent(_ value: Double?) -> String {
+        guard let value else { return "--" }
+        return String(format: "%+.1f%%", value)
+    }
+
+    private func formatConfidencePercent(_ value: Double?) -> String {
+        guard let value else { return "--" }
+        let normalized = abs(value) <= 1 ? value * 100 : value
+        return String(format: "%.0f%%", normalized)
     }
 
     private func formatScore(_ value: Double?) -> String {

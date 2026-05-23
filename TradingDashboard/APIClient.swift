@@ -48,6 +48,106 @@ final class APIClient {
         return nil
     }
 
+    func fetchMarketRegime(
+        baseURL: String,
+        apiKey: String,
+        completion: @escaping (MarketRegimeResponse?, String?) -> Void
+    ) {
+        var components = URLComponents(string: "\(baseURL)/api/intelligence/regime")
+        components?.queryItems = [
+            URLQueryItem(name: "k", value: apiKey)
+        ]
+
+        guard let url = components?.url else {
+            completion(nil, "Bad intelligence regime URL")
+            return
+        }
+
+        var req = URLRequest(url: url)
+        req.timeoutInterval = AppConfig.buyLowRequestTimeout
+        req.setValue(apiKey, forHTTPHeaderField: "X-API-KEY")
+
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            if let error {
+                completion(nil, error.localizedDescription)
+                return
+            }
+
+            guard let http = response as? HTTPURLResponse else {
+                completion(nil, "No HTTP response")
+                return
+            }
+
+            guard (200...299).contains(http.statusCode) else {
+                completion(nil, self.apiErrorMessage(data: data, statusCode: http.statusCode))
+                return
+            }
+
+            guard let data else {
+                completion(nil, "No intelligence regime response body")
+                return
+            }
+
+            do {
+                let decoded = try JSONDecoder().decode(MarketRegimeResponse.self, from: data)
+                completion(decoded, nil)
+            } catch {
+                let body = String(data: data, encoding: .utf8) ?? ""
+                completion(nil, "Intelligence regime decode error: \(error.localizedDescription). Body: \(body)")
+            }
+        }.resume()
+    }
+
+    func fetchIntelligenceOpportunities(
+        baseURL: String,
+        apiKey: String,
+        completion: @escaping (IntelligenceOpportunitiesResponse?, String?) -> Void
+    ) {
+        var components = URLComponents(string: "\(baseURL)/api/intelligence/opportunities")
+        components?.queryItems = [
+            URLQueryItem(name: "k", value: apiKey)
+        ]
+
+        guard let url = components?.url else {
+            completion(nil, "Bad intelligence opportunities URL")
+            return
+        }
+
+        var req = URLRequest(url: url)
+        req.timeoutInterval = AppConfig.buyLowRequestTimeout
+        req.setValue(apiKey, forHTTPHeaderField: "X-API-KEY")
+
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            if let error {
+                completion(nil, error.localizedDescription)
+                return
+            }
+
+            guard let http = response as? HTTPURLResponse else {
+                completion(nil, "No HTTP response")
+                return
+            }
+
+            guard (200...299).contains(http.statusCode) else {
+                completion(nil, self.apiErrorMessage(data: data, statusCode: http.statusCode))
+                return
+            }
+
+            guard let data else {
+                completion(nil, "No intelligence opportunities response body")
+                return
+            }
+
+            do {
+                let decoded = try JSONDecoder().decode(IntelligenceOpportunitiesResponse.self, from: data)
+                completion(decoded, nil)
+            } catch {
+                let body = String(data: data, encoding: .utf8) ?? ""
+                completion(nil, "Intelligence opportunities decode error: \(error.localizedDescription). Body: \(body)")
+            }
+        }.resume()
+    }
+
     func fetchTrendWatchlist(
         baseURL: String,
         apiKey: String,

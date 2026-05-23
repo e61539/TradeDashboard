@@ -148,6 +148,142 @@ nonisolated struct SymbolStatus: Identifiable {
     let lastPrice: Double?
 }
 
+// MARK: - Intelligence API
+
+nonisolated struct MarketRegimeResponse: Decodable {
+    let regime: String?
+    let confidence: Double?
+    let reason: String?
+    let spyLast: Double?
+    let spyPrevClose: Double?
+    let spyDayChangePct: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case regime
+        case confidence
+        case reason
+        case spyLast = "spy_last"
+        case spyPrevClose = "spy_prev_close"
+        case spyDayChangePct = "spy_day_change_pct"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        regime = try container.decodeIfPresent(String.self, forKey: .regime)
+        confidence = Self.decodeDouble(container, .confidence)
+        reason = try container.decodeIfPresent(String.self, forKey: .reason)
+        spyLast = Self.decodeDouble(container, .spyLast)
+        spyPrevClose = Self.decodeDouble(container, .spyPrevClose)
+        spyDayChangePct = Self.decodeDouble(container, .spyDayChangePct)
+    }
+
+    private static func decodeDouble(
+        _ container: KeyedDecodingContainer<CodingKeys>,
+        _ key: CodingKeys
+    ) -> Double? {
+        if let value = try? container.decodeIfPresent(Double.self, forKey: key) {
+            return value
+        }
+        if let text = try? container.decodeIfPresent(String.self, forKey: key) {
+            return Double(text.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        return nil
+    }
+}
+
+nonisolated struct IntelligenceOpportunitiesResponse: Decodable {
+    let generatedAt: String?
+    let regime: MarketRegimeResponse?
+    let opportunities: [IntelligenceOpportunity]
+
+    enum CodingKeys: String, CodingKey {
+        case generatedAt = "generated_at"
+        case regime
+        case opportunities
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        generatedAt = try container.decodeIfPresent(String.self, forKey: .generatedAt)
+        regime = try container.decodeIfPresent(MarketRegimeResponse.self, forKey: .regime)
+        opportunities = try container.decodeIfPresent([IntelligenceOpportunity].self, forKey: .opportunities) ?? []
+    }
+}
+
+nonisolated struct IntelligenceOpportunity: Decodable, Identifiable {
+    var id: String { symbol }
+
+    let symbol: String
+    let score: Double?
+    let rating: String?
+    let buyLowReady: Bool?
+    let distanceTo52WHighPct: Double?
+    let firstStageThresholdPct: Double?
+    let state: String?
+
+    enum CodingKeys: String, CodingKey {
+        case symbol
+        case score
+        case rating
+        case buyLowReady = "buy_low_ready"
+        case buyLowReadyCamel = "buyLowReady"
+        case distanceTo52WHighPct = "distance_to_52w_high_pct"
+        case distanceTo52WHighPctCamel = "distanceTo52wHighPct"
+        case firstStageThresholdPct = "first_stage_threshold_pct"
+        case firstStageThresholdPctCamel = "firstStageThresholdPct"
+        case state
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        symbol = (try container.decode(String.self, forKey: .symbol)).uppercased()
+        score = Self.decodeDouble(container, .score)
+        rating = try container.decodeIfPresent(String.self, forKey: .rating)
+        buyLowReady = Self.decodeBool(container, .buyLowReady) ?? Self.decodeBool(container, .buyLowReadyCamel)
+        distanceTo52WHighPct = Self.decodeDouble(container, .distanceTo52WHighPct)
+            ?? Self.decodeDouble(container, .distanceTo52WHighPctCamel)
+        firstStageThresholdPct = Self.decodeDouble(container, .firstStageThresholdPct)
+            ?? Self.decodeDouble(container, .firstStageThresholdPctCamel)
+        state = try container.decodeIfPresent(String.self, forKey: .state)
+    }
+
+    private static func decodeDouble(
+        _ container: KeyedDecodingContainer<CodingKeys>,
+        _ key: CodingKeys
+    ) -> Double? {
+        if let value = try? container.decodeIfPresent(Double.self, forKey: key) {
+            return value
+        }
+        if let text = try? container.decodeIfPresent(String.self, forKey: key) {
+            return Double(text.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        return nil
+    }
+
+    private static func decodeBool(
+        _ container: KeyedDecodingContainer<CodingKeys>,
+        _ key: CodingKeys
+    ) -> Bool? {
+        if let value = try? container.decodeIfPresent(Bool.self, forKey: key) {
+            return value
+        }
+        if let text = try? container.decodeIfPresent(String.self, forKey: key) {
+            switch text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+            case "true", "yes", "1", "ready":
+                return true
+            case "false", "no", "0", "watch":
+                return false
+            default:
+                return nil
+            }
+        }
+        return nil
+    }
+}
+
 // MARK: - Trend Rider Watchlist API
 
 nonisolated struct TrendWatchlistItem: Decodable, Identifiable {

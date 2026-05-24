@@ -221,6 +221,12 @@ nonisolated struct IntelligenceOpportunity: Decodable, Identifiable {
     let buyLowReady: Bool?
     let distanceTo52WHighPct: Double?
     let firstStageThresholdPct: Double?
+    let dipPct: Double?
+    let triggerPct: Double?
+    let triggerReference: String?
+    let targetPrice: Double?
+    let triggerDescription: String?
+    let targetDescription: String?
     let state: String?
 
     enum CodingKeys: String, CodingKey {
@@ -233,6 +239,18 @@ nonisolated struct IntelligenceOpportunity: Decodable, Identifiable {
         case distanceTo52WHighPctCamel = "distanceTo52wHighPct"
         case firstStageThresholdPct = "first_stage_threshold_pct"
         case firstStageThresholdPctCamel = "firstStageThresholdPct"
+        case dipPct = "dip_pct"
+        case dipPctCamel = "dipPct"
+        case triggerPct = "trigger_pct"
+        case triggerPctCamel = "triggerPct"
+        case triggerReference = "trigger_reference"
+        case triggerReferenceCamel = "triggerReference"
+        case targetPrice = "target_price"
+        case targetPriceCamel = "targetPrice"
+        case triggerDescription = "trigger_description"
+        case triggerDescriptionCamel = "triggerDescription"
+        case targetDescription = "target_description"
+        case targetDescriptionCamel = "targetDescription"
         case state
     }
 
@@ -247,6 +265,18 @@ nonisolated struct IntelligenceOpportunity: Decodable, Identifiable {
             ?? Self.decodeDouble(container, .distanceTo52WHighPctCamel)
         firstStageThresholdPct = Self.decodeDouble(container, .firstStageThresholdPct)
             ?? Self.decodeDouble(container, .firstStageThresholdPctCamel)
+        dipPct = Self.decodeDouble(container, .dipPct)
+            ?? Self.decodeDouble(container, .dipPctCamel)
+        triggerPct = Self.decodeDouble(container, .triggerPct)
+            ?? Self.decodeDouble(container, .triggerPctCamel)
+        triggerReference = try container.decodeIfPresent(String.self, forKey: .triggerReference)
+            ?? container.decodeIfPresent(String.self, forKey: .triggerReferenceCamel)
+        targetPrice = Self.decodeDouble(container, .targetPrice)
+            ?? Self.decodeDouble(container, .targetPriceCamel)
+        triggerDescription = try container.decodeIfPresent(String.self, forKey: .triggerDescription)
+            ?? container.decodeIfPresent(String.self, forKey: .triggerDescriptionCamel)
+        targetDescription = try container.decodeIfPresent(String.self, forKey: .targetDescription)
+            ?? container.decodeIfPresent(String.self, forKey: .targetDescriptionCamel)
         state = try container.decodeIfPresent(String.self, forKey: .state)
     }
 
@@ -310,6 +340,15 @@ nonisolated struct TrendWatchlistItem: Decodable, Identifiable {
     let canTrade: Bool?
     let visible: Bool?
     let dataAvailable: Bool?
+    let currentPrice: Double?
+    let referencePrice: Double?
+    let referenceSource: String?
+    let dipPct: Double?
+    let triggerPct: Double?
+    let triggerReference: String?
+    let targetPrice: Double?
+    let triggerDescription: String?
+    let targetDescription: String?
 
     enum CodingKeys: String, CodingKey {
         case symbol
@@ -336,6 +375,24 @@ nonisolated struct TrendWatchlistItem: Decodable, Identifiable {
         case canTradeCamel = "canTrade"
         case visible
         case dataAvailable = "data_available"
+        case currentPrice = "current_price"
+        case currentPriceCamel = "currentPrice"
+        case referencePrice = "reference_price"
+        case referencePriceCamel = "referencePrice"
+        case referenceSource = "reference_source"
+        case referenceSourceCamel = "referenceSource"
+        case dipPct = "dip_pct"
+        case dipPctCamel = "dipPct"
+        case triggerPct = "trigger_pct"
+        case triggerPctCamel = "triggerPct"
+        case triggerReference = "trigger_reference"
+        case triggerReferenceCamel = "triggerReference"
+        case targetPrice = "target_price"
+        case targetPriceCamel = "targetPrice"
+        case triggerDescription = "trigger_description"
+        case triggerDescriptionCamel = "triggerDescription"
+        case targetDescription = "target_description"
+        case targetDescriptionCamel = "targetDescription"
     }
 
     init(from decoder: Decoder) throws {
@@ -364,6 +421,24 @@ nonisolated struct TrendWatchlistItem: Decodable, Identifiable {
         canTrade = Self.decodeBool(container, .canTrade) ?? Self.decodeBool(container, .canTradeCamel)
         visible = try container.decodeIfPresent(Bool.self, forKey: .visible)
         dataAvailable = try container.decodeIfPresent(Bool.self, forKey: .dataAvailable)
+        currentPrice = Self.decodeDouble(container, .currentPrice)
+            ?? Self.decodeDouble(container, .currentPriceCamel)
+        dipPct = Self.decodeDouble(container, .dipPct)
+            ?? Self.decodeDouble(container, .dipPctCamel)
+        triggerPct = Self.decodeDouble(container, .triggerPct)
+            ?? Self.decodeDouble(container, .triggerPctCamel)
+        referencePrice = Self.decodeDouble(container, .referencePrice)
+            ?? Self.decodeDouble(container, .referencePriceCamel)
+        referenceSource = try container.decodeIfPresent(String.self, forKey: .referenceSource)
+            ?? container.decodeIfPresent(String.self, forKey: .referenceSourceCamel)
+        triggerReference = try container.decodeIfPresent(String.self, forKey: .triggerReference)
+            ?? container.decodeIfPresent(String.self, forKey: .triggerReferenceCamel)
+        targetPrice = Self.decodeDouble(container, .targetPrice)
+            ?? Self.decodeDouble(container, .targetPriceCamel)
+        triggerDescription = try container.decodeIfPresent(String.self, forKey: .triggerDescription)
+            ?? container.decodeIfPresent(String.self, forKey: .triggerDescriptionCamel)
+        targetDescription = try container.decodeIfPresent(String.self, forKey: .targetDescription)
+            ?? container.decodeIfPresent(String.self, forKey: .targetDescriptionCamel)
     }
 
     private static func decodeDouble(

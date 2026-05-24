@@ -442,11 +442,19 @@ struct ContentView: View {
                                 Spacer(minLength: 0)
                             }
 
-                            Text(trendMarketCondition(trendItem, quoteItem: item))
+                            Text(trendTriggerLineText(trendItem, quoteItem: item))
                                 .font(.system(size: 16, weight: .medium))
                                 .foregroundColor(.secondary)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.82)
+
+                            if let target = trendTargetLineText(trendItem) {
+                                Text(target)
+                                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.78)
+                            }
                         }
                     } else {
                         Text(trendCloseText(nil, quoteItem: item) ?? "Prev Close --")
@@ -527,9 +535,17 @@ struct ContentView: View {
                 Spacer(minLength: 0)
             }
 
-            if let pullback = pullbackTriggerText(item) {
-                Text(pullback)
+            if let trigger = triggerLineText(item) {
+                Text(trigger)
                     .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+            }
+
+            if let target = targetLineText(item) {
+                Text(target)
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
                     .foregroundColor(.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.78)
@@ -1128,13 +1144,46 @@ struct ContentView: View {
         }
     }
 
-    private func pullbackTriggerText(_ item: IntelligenceOpportunity) -> String? {
+    private func triggerLineText(_ item: IntelligenceOpportunity) -> String? {
+        if let description = cleanText(item.triggerDescription) {
+            return description
+        }
+
+        if let dip = item.dipPct, let trigger = item.triggerPct {
+            let reference = cleanText(item.triggerReference).map { " · \($0)" } ?? ""
+            return "Dip \(formatCompactPercent(abs(dip))) / Trigger \(formatCompactPercent(trigger))\(reference)"
+        }
+
+        return oldPullbackTriggerText(item)
+    }
+
+    private func targetLineText(_ item: IntelligenceOpportunity) -> String? {
+        if let description = cleanText(item.targetDescription) {
+            return description
+        }
+
+        if let targetPrice = item.targetPrice {
+            return "Target \(formatMoney(targetPrice))"
+        }
+
+        return nil
+    }
+
+    private func oldPullbackTriggerText(_ item: IntelligenceOpportunity) -> String? {
         guard let distance = item.distanceTo52WHighPct else {
             return nil
         }
 
         let trigger = item.firstStageThresholdPct ?? 3.0
         return "\(formatCompactPercent(abs(distance))) / \(formatCompactPercent(trigger)) trigger"
+    }
+
+    private func cleanText(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let trimmed, !trimmed.isEmpty else {
+            return nil
+        }
+        return trimmed
     }
 
     private func trendStatus(_ item: TrendWatchlistItem) -> String {
@@ -1223,6 +1272,73 @@ struct ContentView: View {
         }
 
         return "\(trendStrengthText(item))\(closeSuffix)"
+    }
+
+    private func trendTriggerLineText(_ item: TrendWatchlistItem, quoteItem: SymbolStatus) -> String {
+        if let trigger = item.triggerPct,
+           trigger > 0,
+           let current = item.currentPrice,
+           let reference = item.referencePrice,
+           current > 0,
+           reference > 0 {
+            let referenceLabel = cleanText(item.referenceSource)
+                ?? cleanText(item.triggerReference)
+                ?? "reference"
+            let dipDollar = reference - current
+            let distancePct = abs(dipDollar / reference * 100)
+            let distanceDollar = formatMoney(abs(dipDollar))
+
+            if dipDollar > 0.005 {
+                return "Dip \(formatCompactPercent(distancePct)) / \(distanceDollar) below \(referenceLabel) / Trigger \(formatCompactPercent(trigger))"
+            }
+            if dipDollar < -0.005 {
+                return "Price \(formatCompactPercent(distancePct)) / \(distanceDollar) above \(referenceLabel) / Trigger \(formatCompactPercent(trigger))"
+            }
+            return "Near \(referenceLabel) / Trigger \(formatCompactPercent(trigger))"
+        }
+
+        if let description = cleanText(item.triggerDescription) {
+            return description
+        }
+
+        if let trigger = item.triggerPct, trigger > 0 {
+            return "Trigger \(formatCompactPercent(trigger))"
+        }
+
+        return trendMarketCondition(item, quoteItem: quoteItem)
+    }
+
+    private func trendTargetLineText(_ item: TrendWatchlistItem) -> String? {
+        if let description = cleanText(item.targetDescription) {
+            return description
+        }
+
+        if let targetPrice = item.targetPrice, isTrendTargetSane(item) {
+            return "Target \(formatMoney(targetPrice))"
+        }
+
+        return nil
+    }
+
+    private func isTrendTargetSane(_ item: TrendWatchlistItem) -> Bool {
+        guard
+            let targetPrice = item.targetPrice,
+            let referencePrice = item.referencePrice,
+            let triggerPct = item.triggerPct,
+            targetPrice > 0,
+            referencePrice > 0,
+            triggerPct > 0
+        else {
+            return false
+        }
+
+        let expectedTarget = referencePrice * (1 - triggerPct / 100)
+        guard targetPrice <= referencePrice, expectedTarget > 0 else {
+            return false
+        }
+
+        let tolerance = max(0.02, referencePrice * 0.002)
+        return abs(targetPrice - expectedTarget) <= tolerance
     }
 
     private func trendCloseText(_ item: TrendWatchlistItem?, quoteItem: SymbolStatus) -> String? {

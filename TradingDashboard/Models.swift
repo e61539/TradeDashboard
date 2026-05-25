@@ -212,6 +212,8 @@ nonisolated struct IntelligenceOpportunitiesResponse: Decodable {
     }
 }
 
+typealias IntelligenceResponse = IntelligenceOpportunity
+
 nonisolated struct IntelligenceOpportunity: Decodable, Identifiable {
     var id: String { symbol }
 
@@ -219,8 +221,12 @@ nonisolated struct IntelligenceOpportunity: Decodable, Identifiable {
     let score: Double?
     let rating: String?
     let buyLowReady: Bool?
-    let distanceTo52WHighPct: Double?
+    let dataQuality: String?
     let firstStageThresholdPct: Double?
+    let pullbackVsThresholdPct: Double?
+    let distanceTo52WHighPct: Double?
+    let opportunityReason: String?
+    let riskReason: String?
     let dipPct: Double?
     let triggerPct: Double?
     let triggerReference: String?
@@ -235,10 +241,18 @@ nonisolated struct IntelligenceOpportunity: Decodable, Identifiable {
         case rating
         case buyLowReady = "buy_low_ready"
         case buyLowReadyCamel = "buyLowReady"
-        case distanceTo52WHighPct = "distance_to_52w_high_pct"
-        case distanceTo52WHighPctCamel = "distanceTo52wHighPct"
+        case dataQuality = "data_quality"
+        case dataQualityCamel = "dataQuality"
         case firstStageThresholdPct = "first_stage_threshold_pct"
         case firstStageThresholdPctCamel = "firstStageThresholdPct"
+        case pullbackVsThresholdPct = "pullback_vs_threshold_pct"
+        case pullbackVsThresholdPctCamel = "pullbackVsThresholdPct"
+        case distanceTo52WHighPct = "distance_to_52w_high_pct"
+        case distanceTo52WHighPctCamel = "distanceTo52wHighPct"
+        case opportunityReason = "opportunity_reason"
+        case opportunityReasonCamel = "opportunityReason"
+        case riskReason = "risk_reason"
+        case riskReasonCamel = "riskReason"
         case dipPct = "dip_pct"
         case dipPctCamel = "dipPct"
         case triggerPct = "trigger_pct"
@@ -261,10 +275,18 @@ nonisolated struct IntelligenceOpportunity: Decodable, Identifiable {
         score = Self.decodeDouble(container, .score)
         rating = try container.decodeIfPresent(String.self, forKey: .rating)
         buyLowReady = Self.decodeBool(container, .buyLowReady) ?? Self.decodeBool(container, .buyLowReadyCamel)
-        distanceTo52WHighPct = Self.decodeDouble(container, .distanceTo52WHighPct)
-            ?? Self.decodeDouble(container, .distanceTo52WHighPctCamel)
+        dataQuality = try container.decodeIfPresent(String.self, forKey: .dataQuality)
+            ?? container.decodeIfPresent(String.self, forKey: .dataQualityCamel)
         firstStageThresholdPct = Self.decodeDouble(container, .firstStageThresholdPct)
             ?? Self.decodeDouble(container, .firstStageThresholdPctCamel)
+        pullbackVsThresholdPct = Self.decodeDouble(container, .pullbackVsThresholdPct)
+            ?? Self.decodeDouble(container, .pullbackVsThresholdPctCamel)
+        distanceTo52WHighPct = Self.decodeDouble(container, .distanceTo52WHighPct)
+            ?? Self.decodeDouble(container, .distanceTo52WHighPctCamel)
+        opportunityReason = try container.decodeIfPresent(String.self, forKey: .opportunityReason)
+            ?? container.decodeIfPresent(String.self, forKey: .opportunityReasonCamel)
+        riskReason = try container.decodeIfPresent(String.self, forKey: .riskReason)
+            ?? container.decodeIfPresent(String.self, forKey: .riskReasonCamel)
         dipPct = Self.decodeDouble(container, .dipPct)
             ?? Self.decodeDouble(container, .dipPctCamel)
         triggerPct = Self.decodeDouble(container, .triggerPct)

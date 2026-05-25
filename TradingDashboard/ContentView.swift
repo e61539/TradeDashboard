@@ -161,29 +161,16 @@ struct ContentView: View {
     @ViewBuilder
     private var marketRegimeBanner: some View {
         if let marketRegime {
-            HStack(alignment: .center, spacing: 10) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(displayRegime(marketRegime))
-                        .font(.system(size: 16, weight: .semibold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-
-                    Text("SPY \(formatSignedPercent(marketRegime.spyDayChangePct))")
-                        .font(.system(size: 14, weight: .medium, design: .monospaced))
-                        .foregroundColor(percentColor(marketRegime.spyDayChangePct))
-                        .lineLimit(1)
-                }
-
-                Spacer(minLength: 8)
-
-                Text("Conf \(formatConfidencePercent(marketRegime.confidence))")
-                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                    .foregroundColor(.secondary)
+            HStack(alignment: .center, spacing: 6) {
+                Text(marketRegimeBannerText(marketRegime))
+                    .font(.system(size: 15, weight: .semibold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
+
+                Spacer(minLength: 0)
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 9)
+            .padding(.vertical, 8)
             .background(regimeColor(marketRegime).opacity(0.12))
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
@@ -191,7 +178,7 @@ struct ContentView: View {
             )
             .clipShape(RoundedRectangle(cornerRadius: 8))
         } else if !marketRegimeError.isEmpty {
-            Text("Market regime unavailable: \(marketRegimeError)")
+            Text("Intelligence unavailable")
                 .font(.caption)
                 .foregroundColor(.orange)
                 .fixedSize(horizontal: false, vertical: true)
@@ -384,30 +371,33 @@ struct ContentView: View {
             }
 
             if !intelligenceError.isEmpty {
-                Text(intelligenceError)
+                Text("Intelligence unavailable")
                     .font(.caption)
                     .foregroundColor(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             ForEach(items) { item in
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 9) {
                     let intelligence = intelligenceOpportunity(for: item.symbol)
 
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(item.symbol)
-                                .font(.system(size: 22, weight: .bold))
+                                .font(.system(size: 25, weight: .bold))
                                 .lineLimit(1)
+                                .minimumScaleFactor(0.85)
 
                             Text(currentPriceText(item))
-                                .font(.system(size: 19, weight: .semibold, design: .monospaced))
+                                .font(.system(size: 21, weight: .semibold))
+                                .monospacedDigit()
                                 .foregroundColor(colorForLine(symbol: item.symbol, line: item.lines.first(where: { $0.label == "Last" }), currentLast: item.lastPrice))
                                 .lineLimit(1)
-                                .minimumScaleFactor(0.9)
+                                .minimumScaleFactor(0.86)
                         }
+                        .layoutPriority(1)
 
-                        Spacer(minLength: 8)
+                        Spacer(minLength: 4)
 
                         let canTrade = canTrade(item.symbol)
 
@@ -425,8 +415,15 @@ struct ContentView: View {
                     }
 
                     if let trendItem = trendItem(for: item.symbol) {
-                        VStack(alignment: .leading, spacing: 7) {
-                            HStack(alignment: .center, spacing: 8) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(trendTriggerLineText(trendItem, quoteItem: item))
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.82)
+                                .monospacedDigit()
+
+                            HStack(alignment: .center, spacing: 6) {
                                 trendBadge(
                                     text: trendStatusWithPriority(trendItem),
                                     color: trendDisplayColor(trendItem),
@@ -434,26 +431,21 @@ struct ContentView: View {
                                 )
 
                                 Text(trendShortReason(trendItem))
-                                    .font(.system(size: 17, weight: .semibold))
+                                    .font(.system(size: 16, weight: .semibold))
                                     .foregroundColor(.primary)
                                     .lineLimit(1)
-                                    .minimumScaleFactor(0.82)
+                                    .minimumScaleFactor(0.78)
 
                                 Spacer(minLength: 0)
                             }
 
-                            Text(trendTriggerLineText(trendItem, quoteItem: item))
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.82)
-
                             if let target = trendTargetLineText(trendItem) {
                                 Text(target)
-                                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                    .font(.system(size: 15.5, weight: .medium))
+                                    .monospacedDigit()
                                     .foregroundColor(.secondary)
                                     .lineLimit(1)
-                                    .minimumScaleFactor(0.78)
+                                    .minimumScaleFactor(0.82)
                             }
                         }
                     } else {
@@ -464,8 +456,8 @@ struct ContentView: View {
                             .minimumScaleFactor(0.82)
                     }
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 14)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 12)
                 .background(Color(.secondarySystemBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             }
@@ -508,47 +500,37 @@ struct ContentView: View {
     private func intelligenceSummaryRow(_ item: IntelligenceOpportunity) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
+                Text("\(displayRating(item.rating)) · \(formatScore(item.score))")
+                    .font(.system(size: 14, weight: .semibold))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+
+                Spacer(minLength: 0)
+
                 trendBadge(
                     text: intelligenceStateLabel(item),
                     color: intelligenceStateColor(item),
                     prominent: false
                 )
-
-                Text("Score \(formatScore(item.score))")
-                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                    .lineLimit(1)
-
-                Text(displayRating(item.rating))
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-
-                if item.buyLowReady == true {
-                    Text("BuyLow ready")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.green)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                }
-
-                Spacer(minLength: 0)
             }
 
             if let trigger = triggerLineText(item) {
                 Text(trigger)
-                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .font(.system(size: 14.5, weight: .medium))
+                    .monospacedDigit()
                     .foregroundColor(.secondary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.78)
+                    .minimumScaleFactor(0.82)
             }
 
             if let target = targetLineText(item) {
                 Text(target)
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .font(.system(size: 14, weight: .medium))
+                    .monospacedDigit()
                     .foregroundColor(.secondary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.78)
+                    .minimumScaleFactor(0.82)
             }
         }
     }
@@ -1060,9 +1042,13 @@ struct ContentView: View {
     private func displayRegime(_ regime: MarketRegimeResponse) -> String {
         let value = regime.regime?.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let value, !value.isEmpty else {
-            return "Market UNKNOWN"
+            return "UNKNOWN"
         }
-        return "Market \(value.replacingOccurrences(of: "_", with: " ").uppercased())"
+        return value.replacingOccurrences(of: "_", with: " ").uppercased()
+    }
+
+    private func marketRegimeBannerText(_ regime: MarketRegimeResponse) -> String {
+        "Market: \(displayRegime(regime)) | SPY \(formatSignedPercent(regime.spyDayChangePct)) | \(formatConfidencePercent(regime.confidence))"
     }
 
     private func regimeColor(_ regime: MarketRegimeResponse) -> Color {
@@ -1098,36 +1084,21 @@ struct ContentView: View {
     }
 
     private func intelligenceStateLabel(_ item: IntelligenceOpportunity) -> String {
-        if let state = item.state?.trimmingCharacters(in: .whitespacesAndNewlines), !state.isEmpty {
-            let normalized = state.replacingOccurrences(of: "_", with: " ").uppercased()
-            if normalized.contains("READY") {
-                return "READY"
-            }
-            if normalized.contains("NEAR HIGH") {
-                return "NEAR HIGH"
-            }
-            if normalized.contains("DEFENSIVE") {
-                return "DEFENSIVE"
-            }
-            if normalized.contains("WATCH") {
-                return "WATCH"
-            }
-        }
-
         if item.buyLowReady == true {
             return "READY"
         }
 
-        if let distance = item.distanceTo52WHighPct {
-            let threshold = item.firstStageThresholdPct ?? 3.0
-            if abs(distance) <= threshold {
+        if item.buyLowReady == false,
+           let distance = item.distanceTo52WHighPct,
+           let threshold = item.firstStageThresholdPct {
+            if distance < threshold {
                 return "NEAR HIGH"
             }
         }
 
-        let rating = (item.rating ?? "").lowercased()
-        if rating.contains("defensive") || rating.contains("risk") || rating.contains("avoid") {
-            return "DEFENSIVE"
+        if let dataQuality = cleanText(item.dataQuality),
+           dataQuality.uppercased() != "OK" {
+            return "DATA ISSUE"
         }
 
         return "WATCH"
@@ -1137,21 +1108,28 @@ struct ContentView: View {
         switch intelligenceStateLabel(item) {
         case "READY":
             return .green
-        case "NEAR HIGH", "DEFENSIVE":
+        case "NEAR HIGH":
             return .orange
+        case "DATA ISSUE":
+            return .red
         default:
             return .blue
         }
     }
 
     private func triggerLineText(_ item: IntelligenceOpportunity) -> String? {
+        if let pullback = item.pullbackVsThresholdPct,
+           let threshold = item.firstStageThresholdPct {
+            return "Pullback \(formatCompactPercent(abs(pullback))) / \(formatCompactPercent(threshold)) trigger"
+        }
+
         if let description = cleanText(item.triggerDescription) {
             return description
         }
 
         if let dip = item.dipPct, let trigger = item.triggerPct {
             let reference = cleanText(item.triggerReference).map { " · \($0)" } ?? ""
-            return "Dip \(formatCompactPercent(abs(dip))) / Trigger \(formatCompactPercent(trigger))\(reference)"
+            return "Pullback \(formatCompactPercent(abs(dip))) / \(formatCompactPercent(trigger)) trigger\(reference)"
         }
 
         return oldPullbackTriggerText(item)
@@ -1175,7 +1153,7 @@ struct ContentView: View {
         }
 
         let trigger = item.firstStageThresholdPct ?? 3.0
-        return "\(formatCompactPercent(abs(distance))) / \(formatCompactPercent(trigger)) trigger"
+        return "Pullback \(formatCompactPercent(abs(distance))) / \(formatCompactPercent(trigger)) trigger"
     }
 
     private func cleanText(_ value: String?) -> String? {
@@ -1281,28 +1259,28 @@ struct ContentView: View {
            let reference = item.referencePrice,
            current > 0,
            reference > 0 {
-            let referenceLabel = cleanText(item.referenceSource)
-                ?? cleanText(item.triggerReference)
-                ?? "reference"
+            let referenceLabel = abbreviatedReference(
+                cleanText(item.referenceSource) ?? cleanText(item.triggerReference)
+            )
             let dipDollar = reference - current
             let distancePct = abs(dipDollar / reference * 100)
             let distanceDollar = formatMoney(abs(dipDollar))
 
             if dipDollar > 0.005 {
-                return "Dip \(formatCompactPercent(distancePct)) / \(distanceDollar) below \(referenceLabel) / Trigger \(formatCompactPercent(trigger))"
+                return "Dip \(formatWatchlistPercent(distancePct)) / \(distanceDollar) below \(referenceLabel) / Trig \(formatWatchlistPercent(trigger))"
             }
             if dipDollar < -0.005 {
-                return "Price \(formatCompactPercent(distancePct)) / \(distanceDollar) above \(referenceLabel) / Trigger \(formatCompactPercent(trigger))"
+                return "Price \(formatWatchlistPercent(distancePct)) / \(distanceDollar) above \(referenceLabel) / Trig \(formatWatchlistPercent(trigger))"
             }
-            return "Near \(referenceLabel) / Trigger \(formatCompactPercent(trigger))"
+            return "Near \(referenceLabel) / Trig \(formatWatchlistPercent(trigger))"
         }
 
         if let description = cleanText(item.triggerDescription) {
-            return description
+            return abbreviateWatchlistText(description)
         }
 
         if let trigger = item.triggerPct, trigger > 0 {
-            return "Trigger \(formatCompactPercent(trigger))"
+            return "Trig \(formatWatchlistPercent(trigger))"
         }
 
         return trendMarketCondition(item, quoteItem: quoteItem)
@@ -1310,14 +1288,59 @@ struct ContentView: View {
 
     private func trendTargetLineText(_ item: TrendWatchlistItem) -> String? {
         if let description = cleanText(item.targetDescription) {
-            return description
+            return abbreviateWatchlistText(description)
         }
 
         if let targetPrice = item.targetPrice, isTrendTargetSane(item) {
-            return "Target \(formatMoney(targetPrice))"
+            return "Buy @ ~\(formatMoney(targetPrice))"
         }
 
         return nil
+    }
+
+    private func abbreviatedReference(_ text: String?) -> String {
+        let value = cleanText(text) ?? "ref"
+        let normalized = value.lowercased()
+
+        if normalized == "prev close" || normalized == "previous close" {
+            return "PC"
+        }
+        if normalized == "recent high" {
+            return "RH"
+        }
+        if normalized == "52w high" || normalized == "52 week high" || normalized == "52-week high" {
+            return "52H"
+        }
+        if normalized == "stage anchor" {
+            return "SA"
+        }
+        if normalized == "breakout anchor" {
+            return "BA"
+        }
+
+        return abbreviateWatchlistText(value)
+    }
+
+    private func abbreviateWatchlistText(_ text: String) -> String {
+        var output = text
+        let replacements = [
+            "Previous Close": "PC",
+            "Prev Close": "PC",
+            "Recent High": "RH",
+            "52W High": "52H",
+            "52w High": "52H",
+            "Stage Anchor": "SA",
+            "Breakout Anchor": "BA",
+            "Buy trigger around": "Buy @ ~",
+            "Trigger": "Trig",
+            "trigger": "trig"
+        ]
+
+        for (source, replacement) in replacements {
+            output = output.replacingOccurrences(of: source, with: replacement)
+        }
+
+        return output
     }
 
     private func isTrendTargetSane(_ item: TrendWatchlistItem) -> Bool {
@@ -1741,6 +1764,10 @@ struct ContentView: View {
 
     private func formatScore(_ value: Double?) -> String {
         guard let value else { return "--" }
+        let rounded = value.rounded()
+        if abs(value - rounded) < 0.05 {
+            return String(format: "%.0f", rounded)
+        }
         return String(format: "%.1f", value)
     }
 
@@ -1761,6 +1788,14 @@ struct ContentView: View {
 
     private func formatCompactPercent(_ value: Double?) -> String {
         guard let value else { return "--" }
+        return String(format: "%.1f%%", value)
+    }
+
+    private func formatWatchlistPercent(_ value: Double) -> String {
+        let rounded = value.rounded()
+        if abs(value - rounded) < 0.05 {
+            return String(format: "%.0f%%", rounded)
+        }
         return String(format: "%.1f%%", value)
     }
 }

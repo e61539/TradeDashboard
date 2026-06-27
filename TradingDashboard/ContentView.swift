@@ -1,6 +1,21 @@
 import SwiftUI
 
+private enum BTCPutHealthCheckError: LocalizedError {
+    case badStatus(Int?)
+
+    var errorDescription: String? {
+        switch self {
+        case .badStatus(let status):
+            if let status {
+                return "HTTP status \(status)"
+            }
+            return "No HTTP status returned"
+        }
+    }
+}
+
 struct ContentView: View {
+    @Environment(\.openURL) private var openURL
     @StateObject private var endpointResolver = EndpointResolver.shared
 
     @State private var items: [SymbolStatus] = []
@@ -23,6 +38,10 @@ struct ContentView: View {
     @State private var marketRegimeError: String = ""
     @State private var intelligenceOpportunities: [IntelligenceOpportunity] = []
     @State private var intelligenceError: String = ""
+    @State private var decisionActions: DecisionActionsResponse?
+    @State private var btcPutAlertMessage: String = ""
+    @State private var btcPutStatusMessage: String = ""
+    @State private var isCheckingBTCPutDashboard = false
 
     @State private var assetTotal: Double = 0
     @State private var cashAvailable: Double?
@@ -36,6 +55,15 @@ struct ContentView: View {
 
     private var baseURL: String { endpointResolver.dashboardBaseURL }
     private var tradeBaseURL: String { endpointResolver.tradeBaseURL }
+    private var btcPutDashboardBaseURL: String {
+        "http://\(AppConfig.localHost):\(AppConfig.btcPutDashboardPort)"
+    }
+    private var btcPutDashboardURL: URL? {
+        URL(string: btcPutDashboardBaseURL)
+    }
+    private var btcPutHealthURL: URL? {
+        URL(string: "\(btcPutDashboardBaseURL)/health")
+    }
     private let tradeAPIKey = AppConfig.apiKey
     private var symbols: [String] {
         trendWatchlistSymbols.isEmpty ? defaultSymbols : trendWatchlistSymbols
@@ -52,8 +80,7 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     topBar
                     marketRegimeBanner
-
-                    BuyLowView(baseURL: tradeBaseURL, apiKey: tradeAPIKey, symbols: symbols)
+                    todaysGuidanceCard
 
                     qtyBar
 
@@ -123,6 +150,23 @@ struct ContentView: View {
             .sheet(item: $orderPreview) { preview in
                 orderPreviewSheet(preview)
             }
+            .alert("BTC Put Dashboard", isPresented: Binding(
+                get: { !btcPutAlertMessage.isEmpty },
+                set: { newValue in
+                    if !newValue { btcPutAlertMessage = "" }
+                }
+            )) {
+                Button("Open Anyway") {
+                    btcPutAlertMessage = ""
+                    openBTCPutDashboardDirectly()
+                }
+
+                Button("OK", role: .cancel) {
+                    btcPutAlertMessage = ""
+                }
+            } message: {
+                Text(btcPutAlertMessage)
+            }
         }
     }
 
@@ -134,6 +178,12 @@ struct ContentView: View {
                     .bold()
 
                 Spacer()
+
+                Button(isCheckingBTCPutDashboard ? "Checking..." : "BTC Put Dashboard") {
+                    openBTCPutDashboard()
+                }
+                .buttonStyle(.bordered)
+                .disabled(isCheckingBTCPutDashboard)
 
                 NavigationLink {
                     CapitalReadinessView(baseURL: baseURL, apiKey: tradeAPIKey)
@@ -155,7 +205,136 @@ struct ContentView: View {
             Text("Connection: \(endpointResolver.activeRoute.rawValue)")
                 .font(.caption)
                 .foregroundColor(.secondary)
+
+            if !btcPutStatusMessage.isEmpty {
+                HStack(spacing: 8) {
+                    Text(btcPutStatusMessage)
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+
+                    Button("Open Anyway") {
+                        btcPutStatusMessage = ""
+                        openBTCPutDashboardDirectly()
+                    }
+                    .font(.caption)
+                    .buttonStyle(.borderless)
+                }
+            }
         }
+    }
+
+    private func openBTCPutDashboard() {
+        guard !isCheckingBTCPutDashboard else { return }
+        guard let btcPutHealthURL, let btcPutDashboardURL else {
+            btcPutAlertMessage = "BTC Put Dashboard URL is invalid."
+            return
+        }
+
+        isCheckingBTCPutDashboard = true
+        Task {
+            var request = URLRequest(url: btcPutHealthURL)
+            request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+            request.timeoutInterval = 15
+            request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+            let start = Date()
+
+            do {
+                let session = btcPutHealthCheckSession()
+                defer {
+                    session.invalidateAndCancel()
+                }
+
+                let (_, response) = try await session.data(for: request)
+                let elapsedMs = Date().timeIntervalSince(start) * 1000
+                guard
+                    let http = response as? HTTPURLResponse,
+                    (200...299).contains(http.statusCode)
+                else {
+                    let status = (response as? HTTPURLResponse)?.statusCode
+                    throw BTCPutHealthCheckError.badStatus(status)
+                }
+
+                NSLog(
+                    "BTC Put Dashboard health check succeeded: %@ elapsed_ms=%.1f",
+                    btcPutHealthURL.absoluteString,
+                    elapsedMs
+                )
+
+                await MainActor.run {
+                    isCheckingBTCPutDashboard = false
+                    btcPutStatusMessage = ""
+                    openURL(btcPutDashboardURL)
+                }
+            } catch {
+                let elapsedMs = Date().timeIntervalSince(start) * 1000
+                let detail = btcPutHealthCheckErrorMessage(error)
+                NSLog(
+                    "BTC Put Dashboard health check failed: %@ elapsed_ms=%.1f error=%@",
+                    btcPutHealthURL.absoluteString,
+                    elapsedMs,
+                    detail
+                )
+
+                await MainActor.run {
+                    isCheckingBTCPutDashboard = false
+                    if isBTCPutHealthCheckTimeout(error) {
+                        btcPutStatusMessage = "BTC Dashboard temporarily unavailable"
+                        return
+                    }
+
+                    btcPutAlertMessage = """
+                    Cannot reach BTC Put Dashboard health check.
+
+                    Health: \(btcPutHealthURL.absoluteString)
+                    Dashboard: \(btcPutDashboardBaseURL)
+                    Error: \(detail)
+                    Elapsed: \(String(format: "%.0f ms", elapsedMs))
+
+                    If Safari can open the health URL, use Open Anyway.
+                    """
+                }
+            }
+        }
+    }
+
+    private func openBTCPutDashboardDirectly() {
+        guard let btcPutDashboardURL else {
+            btcPutAlertMessage = "BTC Put Dashboard URL is invalid."
+            return
+        }
+
+        openURL(btcPutDashboardURL)
+    }
+
+    private func btcPutHealthCheckSession() -> URLSession {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 15
+        config.timeoutIntervalForResource = 20
+        config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        return URLSession(configuration: config)
+    }
+
+    private func btcPutHealthCheckErrorMessage(_ error: Error) -> String {
+        if let healthError = error as? BTCPutHealthCheckError {
+            return healthError.localizedDescription
+        }
+
+        if let urlError = error as? URLError {
+            return "\(urlError.localizedDescription) (URLError \(urlError.code.rawValue): \(urlError.code))"
+        }
+
+        return error.localizedDescription
+    }
+
+    private func isBTCPutHealthCheckTimeout(_ error: Error) -> Bool {
+        if let urlError = error as? URLError {
+            return urlError.code == .timedOut
+        }
+
+        let nsError = error as NSError
+        return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorTimedOut
     }
 
     @ViewBuilder
@@ -245,6 +424,74 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    private var todaysGuidanceCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Today's Guidance")
+                    .font(.headline)
+                    .bold()
+
+                Spacer(minLength: 8)
+
+                Text("Advisory only")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+
+            if let decisionActions {
+                HStack(spacing: 10) {
+                    Text("Regime: \(guidanceRegimeText(decisionActions))")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+
+                    if let cashAvailable = decisionActions.cashAvailable {
+                        Text("Cash: \(formatCompactMoney(cashAvailable))")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                }
+
+                let topActions = Array(decisionActions.actions.prefix(3))
+                if topActions.isEmpty {
+                    Text("No guidance actions")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(topActions) { action in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(guidanceActionTitle(action))
+                                .font(.system(size: 14, weight: .semibold))
+                                .monospacedDigit()
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.82)
+
+                            if let message = cleanText(action.message) {
+                                Text(message)
+                                    .font(.system(size: 13))
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(2)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
+                }
+            } else {
+                Text("Guidance unavailable")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
     private func previewRow(_ label: String, _ value: String) -> some View {
@@ -746,6 +993,7 @@ struct ContentView: View {
     private func loadAll() {
         fetchMarketRegime()
         fetchIntelligenceOpportunities()
+        fetchDecisionActions()
         fetchTrendWatchlistAndQuotes()
         fetchPositions()
     }
@@ -779,6 +1027,22 @@ struct ContentView: View {
 
                 self.intelligenceOpportunities = []
                 self.intelligenceError = error.map { "Intelligence: \($0)" } ?? "Intelligence unavailable"
+            }
+        }
+    }
+
+    private func fetchDecisionActions() {
+        APIClient.shared.fetchDecisionActions(baseURL: baseURL, apiKey: tradeAPIKey) { response, _ in
+            DispatchQueue.main.async {
+                if let response {
+                    self.decisionActions = response
+                    if self.marketRegime == nil, let regime = response.regime {
+                        self.marketRegime = regime
+                    }
+                    return
+                }
+
+                self.decisionActions = nil
             }
         }
     }
@@ -1049,6 +1313,23 @@ struct ContentView: View {
 
     private func marketRegimeBannerText(_ regime: MarketRegimeResponse) -> String {
         "Market: \(displayRegime(regime)) | SPY \(formatSignedPercent(regime.spyDayChangePct)) | \(formatConfidencePercent(regime.confidence))"
+    }
+
+    private func guidanceRegimeText(_ response: DecisionActionsResponse) -> String {
+        if let regime = response.regime {
+            return displayRegime(regime)
+        }
+        if let marketRegime {
+            return displayRegime(marketRegime)
+        }
+        return "UNKNOWN"
+    }
+
+    private func guidanceActionTitle(_ action: DecisionAction) -> String {
+        let type = cleanText(action.type)?.replacingOccurrences(of: "_", with: " ").uppercased() ?? "ACTION"
+        let symbol = cleanText(action.symbol)?.uppercased() ?? "--"
+        let score = formatScore(action.score)
+        return "\(type) \(symbol) · \(score)"
     }
 
     private func regimeColor(_ regime: MarketRegimeResponse) -> Color {
@@ -1736,6 +2017,10 @@ struct ContentView: View {
     private func formatOptionalMoney(_ value: Double?) -> String {
         guard let value else { return "--" }
         return String(format: "$%.2f", value)
+    }
+
+    private func formatCompactMoney(_ value: Double) -> String {
+        String(format: "$%.0f", value)
     }
 
     private func formatQty(_ value: Double) -> String {

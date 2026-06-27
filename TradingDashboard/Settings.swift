@@ -7,6 +7,7 @@ enum AppConfig {
 
     static let dashboardPort = 8000
     static let tradePort = 8080
+    static let btcPutDashboardPort = 8777
 
     static let enableTrading = true
     static let allowPublicFallback = false

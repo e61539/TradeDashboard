@@ -148,6 +148,56 @@ final class APIClient {
         }.resume()
     }
 
+    func fetchDecisionActions(
+        baseURL: String,
+        apiKey: String,
+        completion: @escaping (DecisionActionsResponse?, String?) -> Void
+    ) {
+        var components = URLComponents(string: "\(baseURL)/api/decision/actions")
+        components?.queryItems = [
+            URLQueryItem(name: "k", value: apiKey)
+        ]
+
+        guard let url = components?.url else {
+            completion(nil, "Bad decision actions URL")
+            return
+        }
+
+        var req = URLRequest(url: url)
+        req.timeoutInterval = AppConfig.buyLowRequestTimeout
+        req.setValue(apiKey, forHTTPHeaderField: "X-API-KEY")
+
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            if let error {
+                completion(nil, error.localizedDescription)
+                return
+            }
+
+            guard let http = response as? HTTPURLResponse else {
+                completion(nil, "No HTTP response")
+                return
+            }
+
+            guard (200...299).contains(http.statusCode) else {
+                completion(nil, self.apiErrorMessage(data: data, statusCode: http.statusCode))
+                return
+            }
+
+            guard let data else {
+                completion(nil, "No decision actions response body")
+                return
+            }
+
+            do {
+                let decoded = try JSONDecoder().decode(DecisionActionsResponse.self, from: data)
+                completion(decoded, nil)
+            } catch {
+                let body = String(data: data, encoding: .utf8) ?? ""
+                completion(nil, "Decision actions decode error: \(error.localizedDescription). Body: \(body)")
+            }
+        }.resume()
+    }
+
     func fetchTrendWatchlist(
         baseURL: String,
         apiKey: String,
@@ -303,382 +353,6 @@ final class APIClient {
                 completion(nil, "Capital readiness decode error: \(error.localizedDescription). Body: \(body)")
             }
         }.resume()
-    }
-
-    func fetchBuyLowStatuses(
-        baseURL: String,
-        apiKey: String,
-        symbols: [String],
-        completion: @escaping ([BuyLowStatus]?, String?) -> Void
-    ) {
-        if symbols.isEmpty {
-            completion([], nil)
-            return
-        }
-
-        let group = DispatchGroup()
-        let lock = NSLock()
-        var statuses: [BuyLowStatus] = []
-        var errors: [String] = []
-
-        for symbol in symbols {
-            group.enter()
-            fetchBuyLowStatus(baseURL: baseURL, apiKey: apiKey, symbol: symbol) { status, error in
-                lock.lock()
-                if let status {
-                    statuses.append(status)
-                }
-                if let error {
-                    errors.append("\(symbol): \(error)")
-                }
-                lock.unlock()
-                group.leave()
-            }
-        }
-
-        group.notify(queue: .global(qos: .utility)) {
-            if statuses.isEmpty, let firstError = errors.first {
-                completion(nil, firstError)
-            } else {
-                completion(statuses.sorted { $0.symbol < $1.symbol }, nil)
-            }
-        }
-    }
-
-    func fetchBuyLowStatus(
-        baseURL: String,
-        apiKey: String,
-        symbol: String,
-        completion: @escaping (BuyLowStatus?, String?) -> Void
-    ) {
-        fetchBuyLowStatusAttempt(
-            baseURL: baseURL,
-            apiKey: apiKey,
-            symbol: symbol,
-            retryOnFailure: true,
-            completion: completion
-        )
-    }
-
-    private func fetchBuyLowStatusAttempt(
-        baseURL: String,
-        apiKey: String,
-        symbol: String,
-        retryOnFailure: Bool,
-        completion: @escaping (BuyLowStatus?, String?) -> Void
-    ) {
-        var components = URLComponents(string: "\(baseURL)/api/logs/summary")
-        components?.queryItems = [
-            URLQueryItem(name: "symbol", value: symbol),
-            URLQueryItem(name: "search_files", value: "30")
-        ]
-
-        guard let url = components?.url else {
-            completion(nil, "Bad BuyLow summary URL")
-            return
-        }
-
-        var req = URLRequest(url: url)
-        req.timeoutInterval = AppConfig.buyLowRequestTimeout
-        req.setValue(apiKey, forHTTPHeaderField: "X-API-KEY")
-
-        func fail(_ message: String) {
-            guard retryOnFailure else {
-                completion(nil, message)
-                return
-            }
-
-            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 1) {
-                self.fetchBuyLowStatusAttempt(
-                    baseURL: baseURL,
-                    apiKey: apiKey,
-                    symbol: symbol,
-                    retryOnFailure: false,
-                    completion: completion
-                )
-            }
-        }
-
-        URLSession.shared.dataTask(with: req) { data, response, error in
-            if let error {
-                fail(error.localizedDescription)
-                return
-            }
-
-            guard let http = response as? HTTPURLResponse else {
-                fail("No HTTP response")
-                return
-            }
-
-            guard (200...299).contains(http.statusCode) else {
-                fail(self.apiErrorMessage(data: data, statusCode: http.statusCode))
-                return
-            }
-
-            guard let data else {
-                fail("No BuyLow summary response body")
-                return
-            }
-
-            do {
-                let decoded = try JSONDecoder().decode(BuyLowSummaryResponse.self, from: data)
-
-                if self.shouldOmitBuyLowStatus(decoded, requestedSymbol: symbol) {
-                    completion(nil, nil)
-                    return
-                }
-
-                guard decoded.ok else {
-                    fail(decoded.error ?? "BuyLow summary unavailable")
-                    return
-                }
-
-                let summary = decoded.summary
-                guard summary != nil else {
-                    completion(nil, nil)
-                    return
-                }
-
-                let status = BuyLowStatus(
-                    symbol: symbol,
-                    status: self.buyLowDisplayStatus(summary),
-                    message: self.buyLowDisplayMessage(summary),
-                    file: decoded.file,
-                    currentExposurePct: self.currentExposurePct(summary),
-                    expCapPct: self.expCapPct(summary)
-                )
-                completion(status, nil)
-            } catch {
-                let body = String(data: data, encoding: .utf8) ?? ""
-                fail("BuyLow summary decode error: \(error.localizedDescription). Body: \(body)")
-            }
-        }.resume()
-    }
-
-    private func shouldOmitBuyLowStatus(_ response: BuyLowSummaryResponse, requestedSymbol: String) -> Bool {
-        if response.omit == true || response.display == false || response.reason == "no_symbol_log_data" {
-            return true
-        }
-
-        guard let summary = response.summary else {
-            return false
-        }
-
-        let displayText = summary.displayText ?? ""
-        let isNoRecentPlaceholder = displayText.localizedCaseInsensitiveContains("No recent")
-            && displayText.localizedCaseInsensitiveContains("BuyLow status")
-        let hasNoMatchedSymbolLines = summary.matchedSymbolLineCount == 0
-        let isWaitLike = (summary.status ?? "").localizedCaseInsensitiveContains("WAIT")
-            || (summary.rawStatus ?? "").localizedCaseInsensitiveContains("UNKNOWN")
-
-        return isNoRecentPlaceholder && (hasNoMatchedSymbolLines || isWaitLike)
-    }
-
-    private func buyLowDisplayStatus(_ summary: BuyLowSummaryPayload?) -> String {
-        guard let summary else { return "UNKNOWN" }
-
-        let block = normalizedBlock(summary)
-        if let finalQty = summary.finalQty, finalQty > 0, block == nil {
-            return "READY | ELIGIBLE"
-        }
-
-        if let reason = blockReason(summary) {
-            if reason == "ATR" || reason == "budget" || reason == "no size" {
-                return "HOLD | BLOCKED(\(reason))"
-            }
-
-            if hasSignal(summary) || summary.finalQty == 0 {
-                return "SIGNAL | BLOCKED(\(reason))"
-            }
-
-            return "HOLD | BLOCKED(\(reason))"
-        }
-
-        if hasSignal(summary), summary.finalQty == 0 {
-            return "SIGNAL | BLOCKED(unknown)"
-        }
-
-        if summary.status?.localizedCaseInsensitiveContains("READY") == true {
-            return "SIGNAL | BLOCKED(unknown)"
-        }
-
-        return summary.status ?? "UNKNOWN"
-    }
-
-    private func buyLowDisplayMessage(_ summary: BuyLowSummaryPayload?) -> String {
-        guard let summary else { return "No signal yet" }
-
-        if blockReason(summary) == "ATR" {
-            if let (ask, target) = buyLowPrices(summary), target > 0 {
-                let discrepancyPct = (ask - target) / target * 100
-                return String(format: "Ask %.2f > Target %.2f (%+.1f%%)", ask, target, discrepancyPct)
-            }
-            return "ATR target not met"
-        }
-
-        if blockReason(summary) == "budget" {
-            if let current = currentExposurePct(summary), let cap = expCapPct(summary), normalizedPercent(current) > normalizedPercent(cap) {
-                return "Budget blocked: exposure over cap"
-            }
-            return "Budget blocked: no usable budget"
-        }
-
-        if let reason = blockReason(summary), isBuySignalText(summary.displayText) {
-            return summary.holdText ?? "Blocked(\(reason))"
-        }
-
-        if summary.finalQty == 0, hasSignal(summary), isBuySignalText(summary.displayText) {
-            return summary.holdText ?? "Blocked"
-        }
-
-        return summary.displayText ?? summary.holdText ?? "No signal yet"
-    }
-
-    private func isBuySignalText(_ text: String?) -> Bool {
-        text?.localizedCaseInsensitiveContains("BUY signal") == true
-    }
-
-    private func buyLowPrices(_ summary: BuyLowSummaryPayload) -> (ask: Double, target: Double)? {
-        if let ask = summary.ask, let target = summary.target {
-            return (ask, target)
-        }
-
-        let text = [
-            summary.displayText,
-            summary.holdText,
-            summary.why,
-            summary.hold,
-            summary.skip,
-            summary.warn,
-            summary.trigger,
-            summary.signal
-        ]
-            .compactMap { $0 }
-            .joined(separator: " ")
-
-        let ask = summary.ask ?? firstNumber(after: ["ask", "ask_price"], in: text)
-        let target = summary.target ?? firstNumber(after: ["target", "target_price", "atr_target"], in: text)
-
-        guard let ask, let target else { return nil }
-        return (ask, target)
-    }
-
-    private func currentExposurePct(_ summary: BuyLowSummaryPayload?) -> Double? {
-        guard let summary else { return nil }
-        return summary.currentExposurePct
-            ?? firstNumber(after: ["current_exposure_pct", "currentExposurePct", "exposure_pct", "exposure"], in: exposureText(summary))
-    }
-
-    private func expCapPct(_ summary: BuyLowSummaryPayload?) -> Double? {
-        guard let summary else { return nil }
-        return summary.expCapPct
-            ?? firstNumber(after: ["exp_cap_pct", "expCapPct", "exp_cap", "cap"], in: exposureText(summary))
-    }
-
-    private func exposureText(_ summary: BuyLowSummaryPayload) -> String {
-        [
-            summary.cap,
-            summary.capDetail,
-            summary.why,
-            summary.hold,
-            summary.skip,
-            summary.warn,
-            summary.displayText,
-            summary.holdText
-        ]
-            .compactMap { $0 }
-            .joined(separator: " ")
-    }
-
-    private func normalizedPercent(_ value: Double) -> Double {
-        abs(value) <= 1 ? value * 100 : value
-    }
-
-    private func firstNumber(after labels: [String], in text: String) -> Double? {
-        for label in labels {
-            let escapedLabel = NSRegularExpression.escapedPattern(for: label)
-            let pattern = #"(?i)\b"# + escapedLabel + #"\b\s*[:=]?\s*\$?([0-9]+(?:\.[0-9]+)?)"#
-            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
-
-            let nsText = text as NSString
-            let range = NSRange(location: 0, length: nsText.length)
-            if let match = regex.firstMatch(in: text, range: range), match.numberOfRanges > 1 {
-                return Double(nsText.substring(with: match.range(at: 1)))
-            }
-        }
-
-        return nil
-    }
-
-    private func blockReason(_ summary: BuyLowSummaryPayload) -> String? {
-        let text = [
-            normalizedBlock(summary),
-            summary.why,
-            summary.hold,
-            summary.skip,
-            summary.warn,
-            summary.displayText,
-            summary.holdText
-        ]
-            .compactMap { $0 }
-            .joined(separator: " ")
-            .lowercased()
-
-        guard !text.isEmpty else { return nil }
-
-        if isATRBlocked(summary, text: text) {
-            return "ATR"
-        }
-        if text.contains("spread") {
-            return "spread"
-        }
-        if text.contains("no_viable_size") || text.contains("no viable size") || text.contains("final_qty=0") {
-            return "no size"
-        }
-        if text.contains("min_usd") || text.contains("min_qty") {
-            return "min size"
-        }
-        if text.contains("budget") || text.contains("cash=0") || text.contains("budget=0") || text.contains("budget 0") {
-            return "budget"
-        }
-        if text.contains("cap") || text.contains("headroom") {
-            return "cap"
-        }
-
-        return normalizedBlock(summary)
-    }
-
-    private func isATRBlocked(_ summary: BuyLowSummaryPayload, text: String) -> Bool {
-        if text.contains("atr") || text.contains("target not met") || text.contains("strict") {
-            return true
-        }
-
-        guard let (ask, target) = buyLowPrices(summary), target > 0 else {
-            return false
-        }
-
-        return ask > target
-    }
-
-    private func normalizedBlock(_ summary: BuyLowSummaryPayload) -> String? {
-        let block = summary.block?.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let block, !block.isEmpty, block.lowercased() != "none" else {
-            return nil
-        }
-        return block
-    }
-
-    private func hasSignal(_ summary: BuyLowSummaryPayload) -> Bool {
-        let signalText = [summary.signal, summary.trigger, summary.passLine]
-            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .joined(separator: " ")
-            .lowercased()
-
-        if !signalText.isEmpty && signalText != "none" {
-            return true
-        }
-
-        return summary.status?.localizedCaseInsensitiveContains("READY") == true
     }
 
     func previewOrder(

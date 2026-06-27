@@ -72,18 +72,13 @@ struct CapitalReadinessView: View {
             }
 
             summaryRow("Schwab budget", formatMoney(readiness.schwabBudgetRemaining))
-            summaryRow("Merrill reserve available", formatMoney(readiness.merrillReserveAvailable))
             summaryRow(
                 "Suggested manual transfer",
                 formatMoney(suggestedManualTransfer(readiness)),
                 color: .orange
             )
 
-            if !readiness.merrillReserveConfigured {
-                Text("Merrill reserve not configured")
-                    .font(.subheadline)
-                    .foregroundColor(.orange)
-            } else if readiness.blockedSymbols.isEmpty {
+            if readiness.blockedSymbols.isEmpty {
                 Text("No funding action suggested")
                     .font(.subheadline)
                     .foregroundColor(.secondary)

@@ -212,6 +212,131 @@ nonisolated struct IntelligenceOpportunitiesResponse: Decodable {
     }
 }
 
+// MARK: - Decision Actions API
+
+nonisolated struct DecisionActionsResponse: Decodable {
+    let generatedAt: String?
+    let mode: String?
+    let manualActionsOnly: Bool?
+    let regime: MarketRegimeResponse?
+    let cashAvailable: Double?
+    let actions: [DecisionAction]
+    let warnings: [String]
+    let elapsedMs: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case generatedAt = "generated_at"
+        case mode
+        case manualActionsOnly = "manual_actions_only"
+        case regime
+        case cashAvailable = "cash_available"
+        case actions
+        case warnings
+        case elapsedMs = "elapsed_ms"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        generatedAt = try container.decodeIfPresent(String.self, forKey: .generatedAt)
+        mode = try container.decodeIfPresent(String.self, forKey: .mode)
+        manualActionsOnly = Self.decodeBool(container, .manualActionsOnly)
+        regime = try container.decodeIfPresent(MarketRegimeResponse.self, forKey: .regime)
+        cashAvailable = Self.decodeDouble(container, .cashAvailable)
+        actions = try container.decodeIfPresent([DecisionAction].self, forKey: .actions) ?? []
+        warnings = try container.decodeIfPresent([String].self, forKey: .warnings) ?? []
+        elapsedMs = Self.decodeDouble(container, .elapsedMs)
+    }
+
+    private static func decodeDouble(
+        _ container: KeyedDecodingContainer<CodingKeys>,
+        _ key: CodingKeys
+    ) -> Double? {
+        if let value = try? container.decodeIfPresent(Double.self, forKey: key) {
+            return value
+        }
+        if let text = try? container.decodeIfPresent(String.self, forKey: key) {
+            return Double(text.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        return nil
+    }
+
+    private static func decodeBool(
+        _ container: KeyedDecodingContainer<CodingKeys>,
+        _ key: CodingKeys
+    ) -> Bool? {
+        if let value = try? container.decodeIfPresent(Bool.self, forKey: key) {
+            return value
+        }
+        if let intValue = try? container.decodeIfPresent(Int.self, forKey: key) {
+            return intValue != 0
+        }
+        if let text = try? container.decodeIfPresent(String.self, forKey: key) {
+            let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if ["true", "yes", "1"].contains(normalized) {
+                return true
+            }
+            if ["false", "no", "0"].contains(normalized) {
+                return false
+            }
+        }
+        return nil
+    }
+}
+
+nonisolated struct DecisionAction: Decodable, Identifiable {
+    var id: String { "\(type ?? "ACTION")-\(symbol ?? "UNKNOWN")-\(priority ?? "")-\(message ?? "")" }
+
+    let priority: String?
+    let type: String?
+    let symbol: String?
+    let score: Double?
+    let message: String?
+    let cashAvailable: Double?
+    let last: Double?
+    let capHeadroom: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case priority
+        case type
+        case symbol
+        case score
+        case message
+        case cashAvailable = "cash_available"
+        case last
+        case capHeadroom = "cap_headroom"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        priority = try container.decodeIfPresent(String.self, forKey: .priority)
+        type = try container.decodeIfPresent(String.self, forKey: .type)
+        symbol = try container.decodeIfPresent(String.self, forKey: .symbol).map { $0.uppercased() }
+        score = Self.decodeDouble(container, .score)
+        message = try container.decodeIfPresent(String.self, forKey: .message)
+        cashAvailable = Self.decodeDouble(container, .cashAvailable)
+        last = Self.decodeDouble(container, .last)
+        capHeadroom = Self.decodeDouble(container, .capHeadroom)
+    }
+
+    private static func decodeDouble(
+        _ container: KeyedDecodingContainer<CodingKeys>,
+        _ key: CodingKeys
+    ) -> Double? {
+        if let value = try? container.decodeIfPresent(Double.self, forKey: key) {
+            return value
+        }
+        if let intValue = try? container.decodeIfPresent(Int.self, forKey: key) {
+            return Double(intValue)
+        }
+        if let text = try? container.decodeIfPresent(String.self, forKey: key) {
+            return Double(text.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        return nil
+    }
+}
+
 typealias IntelligenceResponse = IntelligenceOpportunity
 
 nonisolated struct IntelligenceOpportunity: Decodable, Identifiable {
@@ -662,8 +787,6 @@ nonisolated struct CapitalReadiness: Codable {
     let mode: String
     let schwabCashAvailable: Double
     let schwabBudgetRemaining: Double
-    let merrillReserveAvailable: Double
-    let merrillReserveConfigured: Bool
     let manualActionRequired: Bool
     let blockedSymbols: [BlockedSymbol]
     let isStale: Bool?
@@ -673,8 +796,6 @@ nonisolated struct CapitalReadiness: Codable {
         case mode
         case schwabCashAvailable = "schwab_cash_available"
         case schwabBudgetRemaining = "schwab_budget_remaining"
-        case merrillReserveAvailable = "merrill_reserve_available"
-        case merrillReserveConfigured = "merrill_reserve_configured"
         case manualActionRequired = "manual_action_required"
         case blockedSymbols = "blocked_symbols"
         case isStale = "is_stale"
@@ -707,181 +828,4 @@ nonisolated struct BlockedSymbol: Codable, Identifiable {
         case suggestedSourceHolding = "suggested_source_holding"
         case manualActionRequired = "manual_action_required"
     }
-}
-
-// MARK: - BuyLow API
-
-nonisolated struct BuyLowSummaryPayload: Decodable {
-    let status: String?
-    let rawStatus: String?
-    let symbol: String?
-    let displayText: String?
-    let holdText: String?
-    let passLine: String?
-    let account: String?
-    let brake: String?
-    let cap: String?
-    let capDetail: String?
-    let why: String?
-    let spread: String?
-    let hold: String?
-    let skip: String?
-    let warn: String?
-    let trigger: String?
-    let signal: String?
-    let finalQty: Double?
-    let block: String?
-    let ask: Double?
-    let target: Double?
-    let currentExposurePct: Double?
-    let expCapPct: Double?
-    let matchedSymbolLineCount: Int?
-
-    enum CodingKeys: String, CodingKey {
-        case status
-        case rawStatus = "raw_status"
-        case symbol
-        case displayText = "display_text"
-        case holdText = "hold_text"
-        case passLine = "pass_line"
-        case account
-        case brake
-        case cap
-        case capDetail = "cap_detail"
-        case why
-        case spread
-        case hold
-        case skip
-        case warn
-        case trigger
-        case signal
-        case finalQty = "final_qty"
-        case block
-        case ask
-        case askPrice = "ask_price"
-        case target
-        case targetPrice = "target_price"
-        case atrTarget = "atr_target"
-        case currentExposurePct = "current_exposure_pct"
-        case currentExposurePctCamel = "currentExposurePct"
-        case exposurePct = "exposure_pct"
-        case expCapPct = "exp_cap_pct"
-        case expCapPctCamel = "expCapPct"
-        case matchedSymbolLineCount = "matched_symbol_line_count"
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-
-        status = try container.decodeIfPresent(String.self, forKey: .status)
-        rawStatus = try container.decodeIfPresent(String.self, forKey: .rawStatus)
-        symbol = try container.decodeIfPresent(String.self, forKey: .symbol)
-        displayText = try container.decodeIfPresent(String.self, forKey: .displayText)
-        holdText = try container.decodeIfPresent(String.self, forKey: .holdText)
-        passLine = try container.decodeIfPresent(String.self, forKey: .passLine)
-        account = try container.decodeIfPresent(String.self, forKey: .account)
-        brake = try container.decodeIfPresent(String.self, forKey: .brake)
-        cap = try container.decodeIfPresent(String.self, forKey: .cap)
-        capDetail = try container.decodeIfPresent(String.self, forKey: .capDetail)
-        why = try container.decodeIfPresent(String.self, forKey: .why)
-        spread = try container.decodeIfPresent(String.self, forKey: .spread)
-        hold = try container.decodeIfPresent(String.self, forKey: .hold)
-        skip = try container.decodeIfPresent(String.self, forKey: .skip)
-        warn = try container.decodeIfPresent(String.self, forKey: .warn)
-        trigger = try container.decodeIfPresent(String.self, forKey: .trigger)
-        signal = try container.decodeIfPresent(String.self, forKey: .signal)
-        finalQty = Self.decodeDouble(container, .finalQty)
-        block = try container.decodeIfPresent(String.self, forKey: .block)
-        ask = Self.decodeDouble(container, .ask) ?? Self.decodeDouble(container, .askPrice)
-        target = Self.decodeDouble(container, .target)
-            ?? Self.decodeDouble(container, .targetPrice)
-            ?? Self.decodeDouble(container, .atrTarget)
-        currentExposurePct = Self.decodeDouble(container, .currentExposurePct)
-            ?? Self.decodeDouble(container, .currentExposurePctCamel)
-            ?? Self.decodeDouble(container, .exposurePct)
-        expCapPct = Self.decodeDouble(container, .expCapPct)
-            ?? Self.decodeDouble(container, .expCapPctCamel)
-        matchedSymbolLineCount = Self.decodeInt(container, .matchedSymbolLineCount)
-    }
-
-    private static func decodeDouble(
-        _ container: KeyedDecodingContainer<CodingKeys>,
-        _ key: CodingKeys
-    ) -> Double? {
-        if let value = try? container.decodeIfPresent(Double.self, forKey: key) {
-            return value
-        }
-        if let text = try? container.decodeIfPresent(String.self, forKey: key) {
-            return Double(text.trimmingCharacters(in: .whitespacesAndNewlines))
-        }
-        return nil
-    }
-
-    private static func decodeInt(
-        _ container: KeyedDecodingContainer<CodingKeys>,
-        _ key: CodingKeys
-    ) -> Int? {
-        if let value = try? container.decodeIfPresent(Int.self, forKey: key) {
-            return value
-        }
-        if let text = try? container.decodeIfPresent(String.self, forKey: key) {
-            return Int(text.trimmingCharacters(in: .whitespacesAndNewlines))
-        }
-        return nil
-    }
-}
-
-nonisolated struct BuyLowSummaryResponse: Decodable {
-    let ok: Bool
-    let file: String?
-    let path: String?
-    let symbol: String?
-    let summary: BuyLowSummaryPayload?
-    let error: String?
-    let reason: String?
-    let display: Bool?
-    let omit: Bool?
-}
-
-nonisolated struct BuyLowStatus: Identifiable {
-    var id: String { symbol }
-
-    let symbol: String
-    let status: String
-    let message: String
-    let file: String?
-    let currentExposurePct: Double?
-    let expCapPct: Double?
-
-    func markedStale() -> BuyLowStatus {
-        let lastKnownMessage = message.hasPrefix("Last known: ")
-            ? message
-            : "Last known: \(message)"
-
-        return BuyLowStatus(
-            symbol: symbol,
-            status: "STALE",
-            message: lastKnownMessage,
-            file: file,
-            currentExposurePct: currentExposurePct,
-            expCapPct: expCapPct
-        )
-    }
-}
-
-nonisolated struct BuyLowEntry: Codable, Identifiable {
-    var id = UUID()
-    let event: String
-    let message: String
-
-    enum CodingKeys: String, CodingKey {
-        case event
-        case message
-    }
-}
-
-nonisolated struct BuyLowResponse: Codable {
-    let ok: Bool
-    let count: Int
-    let entries: [BuyLowEntry]
 }
